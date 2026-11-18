@@ -101,7 +101,7 @@ COLORREF App::backdrop(HWND child) const {
     RECT r{};
     GetWindowRect(child, &r);
     MapWindowPoints(nullptr, window, reinterpret_cast<POINT *>(&r), 2);
-    if (r.left < SidebarWidth)
+    if (r.left < S(SidebarWidth))
         return Background;
     POINT center{(r.left + r.right) / 2, (r.top + r.bottom) / 2};
     for (const auto &card : cards)

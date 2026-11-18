@@ -22,13 +22,13 @@ void paintScrollbars(HWND hwnd, HDC supplied = nullptr) {
             continue;
         RECT thumb = track;
         if (object == OBJID_VSCROLL) {
-            thumb.left += 4;
-            thumb.right -= 4;
+            thumb.left += S(4);
+            thumb.right -= S(4);
             thumb.top += info.xyThumbTop;
             thumb.bottom = track.top + info.xyThumbBottom;
         } else {
-            thumb.top += 4;
-            thumb.bottom -= 4;
+            thumb.top += S(4);
+            thumb.bottom -= S(4);
             thumb.left += info.xyThumbTop;
             thumb.right = track.left + info.xyThumbBottom;
         }
@@ -38,7 +38,7 @@ void paintScrollbars(HWND hwnd, HDC supplied = nullptr) {
         HBRUSH brush = CreateSolidBrush(color);
         auto oldBrush = SelectObject(dc, brush);
         auto oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
-        RoundRect(dc, thumb.left, thumb.top, thumb.right, thumb.bottom, 8, 8);
+        RoundRect(dc, thumb.left, thumb.top, thumb.right, thumb.bottom, S(8), S(8));
         SelectObject(dc, oldPen);
         SelectObject(dc, oldBrush);
         DeleteObject(brush);
@@ -58,9 +58,9 @@ LRESULT CALLBACK App::scrollProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l, UINT_P
         RECT r{};
         GetClientRect(hwnd, &r);
         fill(dc, r, Panel);
-        r.left += 18;
-        r.right -= 18;
-        r.top += 28;
+        r.left += S(18);
+        r.right -= S(18);
+        r.top += S(28);
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, Muted);
         SelectObject(dc, app->font);
@@ -77,10 +77,10 @@ LRESULT CALLBACK App::scrollProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l, UINT_P
         RECT r{}, header{};
         GetClientRect(hwnd, &r);
         GetWindowRect(ListView_GetHeader(hwnd), &header);
-        r.top = header.bottom - header.top + 12;
-        r.left += 20;
-        r.right -= 20;
-        r.bottom -= 20;
+        r.top = header.bottom - header.top + S(12);
+        r.left += S(20);
+        r.right -= S(20);
+        r.bottom -= S(20);
         fill(dc, r, Panel);
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, Muted);

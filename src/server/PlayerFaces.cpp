@@ -1,5 +1,6 @@
 #include "PlayerFaces.h"
 #include "PlayerLog.h"
+#include "UiScale.h"
 #include <objidl.h>
 #include <gdiplus.h>
 #include <shlwapi.h>
@@ -43,7 +44,7 @@ bool PlayerFaces::create(HWND parent, HFONT font) {
     if (!font)
         font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     SendMessageW(list_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
-    SendMessageW(list_, LB_SETITEMHEIGHT, 0, RowHeight);
+    SendMessageW(list_, LB_SETITEMHEIGHT, 0, S(RowHeight));
     Gdiplus::GdiplusStartupInput startup;
     if (Gdiplus::GdiplusStartup(&gdiplusToken_, &startup, nullptr) != Gdiplus::Ok) {
         DestroyWindow(list_);
@@ -172,11 +173,12 @@ bool PlayerFaces::draw(const DRAWITEMSTRUCT &item) const {
     FillRect(item.hDC, &item.rcItem, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
     if (selected) {
         // Fluent list selection: a subtle fill with a short accent pill on the leading edge.
-        RECT fillRect{item.rcItem.left + 2, item.rcItem.top + 2, item.rcItem.right - 2, item.rcItem.bottom - 2};
+        RECT fillRect{item.rcItem.left + S(2), item.rcItem.top + S(2), item.rcItem.right - S(2),
+                      item.rcItem.bottom - S(2)};
         SetDCBrushColor(item.hDC, selected_);
         FillRect(item.hDC, &fillRect, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
         int middle = (item.rcItem.top + item.rcItem.bottom) / 2;
-        RECT pill{item.rcItem.left + 2, middle - 9, item.rcItem.left + 5, middle + 9};
+        RECT pill{item.rcItem.left + S(2), middle - S(9), item.rcItem.left + S(5), middle + S(9)};
         SetDCBrushColor(item.hDC, accent_);
         FillRect(item.hDC, &pill, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
     }
@@ -185,18 +187,25 @@ bool PlayerFaces::draw(const DRAWITEMSTRUCT &item) const {
         SelectObject(item.hDC, font);
     SetBkMode(item.hDC, TRANSPARENT);
     SetTextColor(item.hDC, text_);
-    int x = item.rcItem.left + 12;
-    int y = item.rcItem.top + (item.rcItem.bottom - item.rcItem.top - FaceSize) / 2;
+    // Faces are downloaded at FaceSize and drawn at the UI scale (nearest neighbour keeps pixel art crisp).
+    int face = S(FaceSize);
+    int x = item.rcItem.left + S(12);
+    int y = item.rcItem.top + (item.rcItem.bottom - item.rcItem.top - face) / 2;
     if (player.face) {
         HDC memory = CreateCompatibleDC(item.hDC);
         if (memory) {
             auto previous = SelectObject(memory, player.face);
-            BitBlt(item.hDC, x, y, FaceSize, FaceSize, memory, 0, 0, SRCCOPY);
+            if (face == FaceSize)
+                BitBlt(item.hDC, x, y, FaceSize, FaceSize, memory, 0, 0, SRCCOPY);
+            else {
+                SetStretchBltMode(item.hDC, COLORONCOLOR);
+                StretchBlt(item.hDC, x, y, face, face, memory, 0, 0, FaceSize, FaceSize, SRCCOPY);
+            }
             SelectObject(memory, previous);
             DeleteDC(memory);
         }
     } else {
-        RECT placeholder{x, y, x + FaceSize, y + FaceSize};
+        RECT placeholder{x, y, x + face, y + face};
         SetDCBrushColor(item.hDC, selected_);
         FillRect(item.hDC, &placeholder, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
         auto previous = SetTextColor(item.hDC, muted_);
@@ -204,8 +213,8 @@ bool PlayerFaces::draw(const DRAWITEMSTRUCT &item) const {
         SetTextColor(item.hDC, previous);
     }
     RECT name = item.rcItem;
-    name.left += FaceSize + 24;
-    name.right -= 8;
+    name.left += face + S(24);
+    name.right -= S(8);
     DrawTextW(item.hDC, player.name.c_str(), -1, &name,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
     if (item.itemState & ODS_FOCUS)

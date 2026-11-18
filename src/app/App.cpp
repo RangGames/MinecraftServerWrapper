@@ -230,16 +230,16 @@ LRESULT App::dispatch(UINT msg, WPARAM w, LPARAM l) {
     case WM_MEASUREITEM: {
         auto *item = reinterpret_cast<MEASUREITEMSTRUCT *>(l);
         if (item->CtlType == ODT_COMBOBOX) {
-            item->itemHeight = 28;
+            item->itemHeight = S(28);
             return TRUE;
         }
         if (item->CtlID == ServerSelector) {
-            item->itemHeight = 44;
-            item->itemWidth = 260;
+            item->itemHeight = S(44);
+            item->itemWidth = S(260);
             return TRUE;
         }
         if (item->CtlID == PlayerFaces::ControlId) {
-            item->itemHeight = 64;
+            item->itemHeight = S(64);
             return TRUE;
         }
         break;
@@ -262,7 +262,7 @@ LRESULT App::dispatch(UINT msg, WPARAM w, LPARAM l) {
         COLORREF color = Foreground;
         if (id == ServerMeta || id == Footer || id == ServerHint || id == PluginNote || id == BackupNote ||
             id == TaskNote || id == SettingsNote || id == SectionHint || id == PathNote || id == FontInfo ||
-            id == ImageNote || id == WelcomeBody || id == WelcomeSteps || id == BackupInfo || id == TaskSummary ||
+            id == WelcomeBody || id == WelcomeSteps || id == BackupInfo || id == TaskSummary ||
             id == GraphTitle || id == PlayerInfo)
             color = Muted;
         if (id == CpuTitle)
@@ -654,6 +654,7 @@ LRESULT App::dispatch(UINT msg, WPARAM w, LPARAM l) {
         DeleteObject(surfaceBrush);
         DeleteObject(panelBrush);
         DeleteObject(fieldBrush);
+        DeleteObject(shellBuffer);
         DeleteObject(statusBrush);
         PostQuitMessage(0);
         return 0;
@@ -673,7 +674,7 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         return 0;
     }
     if (msg == WM_GETMINMAXINFO) {
-        reinterpret_cast<MINMAXINFO *>(l)->ptMinTrackSize = {1320, 860};
+        reinterpret_cast<MINMAXINFO *>(l)->ptMinTrackSize = {S(1200), S(680)};
         return 0;
     }
     if (app && msg != WM_NCCREATE)
@@ -683,6 +684,15 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
 
 int runApplication(HINSTANCE instance, int show) {
     SetProcessDPIAware();
+    {
+        HDC screen = GetDC(nullptr);
+        UiDpi = std::max(96, GetDeviceCaps(screen, LOGPIXELSY));
+        ReleaseDC(nullptr, screen);
+        // Test hook: SERVERDESK_UI_DPI=144 renders the 150% layout on a 100% display.
+        wchar_t forced[16]{};
+        if (GetEnvironmentVariableW(L"SERVERDESK_UI_DPI", forced, 16))
+            UiDpi = std::clamp(_wtoi(forced), 96, 288);
+    }
     HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     INITCOMMONCONTROLSEX common{sizeof(common), ICC_STANDARD_CLASSES | ICC_LISTVIEW_CLASSES};
     InitCommonControlsEx(&common);
@@ -740,9 +750,15 @@ int runApplication(HINSTANCE instance, int show) {
     } privateFonts;
     SetProcessShutdownParameters(0x3FF, 0); // be notified early so servers can be stopped gracefully
     App app;
+    // Default to 1440x900 logical pixels, shrunk to the work area and centered on it.
+    RECT work{};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+    int width = std::min<int>(S(1440), work.right - work.left), height = std::min<int>(S(900), work.bottom - work.top);
     HWND window = CreateWindowExW(0, cls.lpszClassName, L"Minecraft Server Manager",
-                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 1440,
-                                  900, nullptr, nullptr, instance, &app);
+                                  WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+                                  work.left + (work.right - work.left - width) / 2,
+                                  work.top + (work.bottom - work.top - height) / 2, width, height, nullptr, nullptr,
+                                  instance, &app);
     if (!window) {
         if (SUCCEEDED(com))
             CoUninitialize();

@@ -98,13 +98,41 @@ void App::operation(int id) {
     auto &s = current();
     auto form = [&](const std::wstring &title, const std::wstring &help, std::vector<FormField> &fields,
                     auto validate) {
+        // Show the form in the current language. Choice values are translated for display and mapped
+        // back to their original (Korean) values, which the callers compare against.
+        auto shown = fields;
+        for (auto &field : shown) {
+            field.label = tr(field.label);
+            for (auto &choice : field.choices)
+                choice = tr(choice);
+            auto original = std::find(fields[&field - shown.data()].choices.begin(),
+                                      fields[&field - shown.data()].choices.end(), field.value);
+            if (original != fields[&field - shown.data()].choices.end())
+                field.value = field.choices[original - fields[&field - shown.data()].choices.begin()];
+        }
+        auto restore = [&](std::vector<FormField> values) {
+            for (size_t i = 0; i < values.size() && i < fields.size(); ++i) {
+                values[i].label = fields[i].label;
+                auto &choices = shown[i].choices;
+                if (auto found = std::find(choices.begin(), choices.end(), values[i].value); found != choices.end())
+                    values[i].value = fields[i].choices[found - choices.begin()];
+                values[i].choices = fields[i].choices;
+            }
+            return values;
+        };
+        std::function<std::wstring(const std::vector<FormField> &)> check =
+            [&](const std::vector<FormField> &values) { return tr(validate(restore(values))); };
+        FormPalette palette{Surface, Panel, Border, Foreground, Muted, Accent, lightTheme};
+        palette.okText = tr(L"저장 / 실행");
+        palette.cancelText = tr(L"취소");
         bool lockGroup = groupWindow && IsWindowEnabled(groupWindow);
         if (lockGroup)
             EnableWindow(groupWindow, FALSE);
-        auto result = editForm(window, font, title, help, fields, validate,
-                               {Surface, Panel, Border, Foreground, Muted, Accent, lightTheme});
+        auto result = editForm(window, font, tr(title), tr(help), shown, check, palette);
         if (lockGroup && groupWindow)
             EnableWindow(groupWindow, TRUE);
+        if (result)
+            fields = restore(shown);
         return result;
     };
     auto accept = [](const std::vector<FormField> &) -> std::wstring { return {}; };
@@ -543,7 +571,8 @@ void App::operation(int id) {
                                  : L"한 줄 명령을 입력하세요.";
                   }))
             return;
-        if (!confirm(f[0].value + L"에 " + f[1].value + L" 작업을 실행할까요?"))
+        if (!confirm(english ? L"Run \"" + tr(f[1].value) + L"\" for " + tr(f[0].value) + L"?"
+                             : f[0].value + L"에 " + f[1].value + L" 작업을 실행할까요?"))
             return;
         for (auto &server : servers)
             if ((f[0].value == L"전체 그룹" || server->group == f[0].value) && server->process.running()) {

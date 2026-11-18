@@ -1,6 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <algorithm>
+#include "UiScale.h"
 // Keep native single-line EDIT behavior; center its client area rather than drawing text ourselves.
 inline void centerEditClient(HWND h, WPARAM full, LPARAM data) {
     auto &r = full ? reinterpret_cast<NCCALCSIZE_PARAMS *>(data)->rgrc[0] : *reinterpret_cast<RECT *>(data);
@@ -34,7 +35,7 @@ inline void paintEditFrame(HWND h, COLORREF background, COLORREF border, COLORRE
     FrameRect(dc, &r, brush);
     DeleteObject(brush);
     if (underline != CLR_INVALID) {
-        RECT line{r.left, r.bottom - 2, r.right, r.bottom};
+        RECT line{r.left, r.bottom - S(2), r.right, r.bottom};
         brush = CreateSolidBrush(underline);
         FillRect(dc, &line, brush);
         DeleteObject(brush);

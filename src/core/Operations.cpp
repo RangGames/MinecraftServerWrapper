@@ -1,6 +1,7 @@
 #include "Operations.h"
 #include "UiSurface.h"
 #include "UiInput.h"
+#include "UiScale.h"
 #include <uxtheme.h>
 #include <commctrl.h>
 #include <dwmapi.h>
@@ -174,7 +175,7 @@ LRESULT CALLBACK formInput(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWORD_P
     if (m == WM_SETFOCUS || m == WM_KILLFOCUS)
         InvalidateRect(h, nullptr, FALSE);
     if (m == WM_SIZE)
-        SendMessageW(h, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(10, 10));
+        SendMessageW(h, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(S(10), S(10)));
     if (m == WM_SETFONT)
         refreshEditFrame(h);
     if (m == WM_SETFOCUS || m == WM_KILLFOCUS)
@@ -197,7 +198,7 @@ LRESULT CALLBACK formProc(HWND h, UINT m, WPARAM w, LPARAM l) {
                                      GetModuleHandleW(nullptr), nullptr);
             SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(f->font), TRUE);
             if (cls == std::wstring(L"EDIT")) {
-                SendMessageW(c, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(10, 10));
+                SendMessageW(c, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(S(10), S(10)));
                 SetWindowSubclass(c, formInput, 1, reinterpret_cast<DWORD_PTR>(f));
                 refreshEditFrame(c);
             }
@@ -205,19 +206,19 @@ LRESULT CALLBACK formProc(HWND h, UINT m, WPARAM w, LPARAM l) {
                 SetWindowTheme(c, f->palette.light ? L"Explorer" : L"DarkMode_CFD", nullptr);
             return c;
         };
-        add(L"STATIC", f->help, 0, 90, 16, 12, 740, 64);
-        int y = 84;
-        for (size_t i = 0; i < f->fields.size(); ++i, y += 42) {
+        add(L"STATIC", f->help, 0, 90, S(16), S(12), S(740), S(64));
+        int y = S(84);
+        for (size_t i = 0; i < f->fields.size(); ++i, y += S(42)) {
             auto &field = f->fields[i];
-            add(L"STATIC", field.label, SS_LEFT, 200 + static_cast<int>(i), 16, y + 5, 235, 30);
+            add(L"STATIC", field.label, SS_LEFT, 200 + static_cast<int>(i), S(16), y + S(5), S(235), S(30));
             if (field.choices.empty()) {
                 auto c = add(L"EDIT", field.value, WS_TABSTOP | ES_AUTOHSCROLL, 100 + static_cast<int>(i),
-                             254, y, 500, 28);
+                             S(254), y, S(500), S(30));
                 SendMessageW(c, EM_SETLIMITTEXT, 8192, 0);
             } else {
                 auto c = add(L"COMBOBOX", L"",
                              WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS,
-                             100 + static_cast<int>(i), 254, y, 500, 200);
+                             100 + static_cast<int>(i), S(254), y, S(500), S(200));
                 int selection = 0;
                 for (size_t j = 0; j < field.choices.size(); ++j) {
                     SendMessageW(c, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(field.choices[j].c_str()));
@@ -227,9 +228,9 @@ LRESULT CALLBACK formProc(HWND h, UINT m, WPARAM w, LPARAM l) {
                 SendMessageW(c, CB_SETCURSEL, selection, 0);
             }
         }
-        add(L"STATIC", L"", SS_LEFT, 92, 16, y, 738, 42);
-        add(L"BUTTON", L"저장 / 실행", WS_TABSTOP | BS_OWNERDRAW, IDOK, 494, y + 48, 126, 32);
-        add(L"BUTTON", L"취소", WS_TABSTOP | BS_OWNERDRAW, IDCANCEL, 630, y + 48, 124, 32);
+        add(L"STATIC", L"", SS_LEFT, 92, S(16), y, S(738), S(42));
+        add(L"BUTTON", f->palette.okText, WS_TABSTOP | BS_OWNERDRAW, IDOK, S(494), y + S(48), S(126), S(34));
+        add(L"BUTTON", f->palette.cancelText, WS_TABSTOP | BS_OWNERDRAW, IDCANCEL, S(630), y + S(48), S(124), S(34));
         return 0;
     }
     if (m == WM_ERASEBKGND)
@@ -253,7 +254,7 @@ LRESULT CALLBACK formProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         return reinterpret_cast<LRESULT>(input ? f->input : f->background);
     }
     if (m == WM_MEASUREITEM) {
-        reinterpret_cast<MEASUREITEMSTRUCT *>(l)->itemHeight = 24;
+        reinterpret_cast<MEASUREITEMSTRUCT *>(l)->itemHeight = S(28);
         return TRUE;
     }
     if (m == WM_DRAWITEM) {
@@ -266,9 +267,11 @@ LRESULT CALLBACK formProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             bool primary = item.CtlID == IDOK;
             FillRect(dc, &r, f->background);
             roundedSurface(dc, r, primary ? f->palette.accent : f->palette.input,
-                           (item.itemState & ODS_FOCUS) ? f->palette.accent : f->palette.border, 7);
-            SetTextColor(dc, primary ? (f->palette.light ? RGB(255, 255, 255) : RGB(25, 29, 15))
-                                     : f->palette.foreground);
+                           (item.itemState & ODS_FOCUS) ? f->palette.foreground
+                           : primary                    ? f->palette.accent
+                                                        : f->palette.border,
+                           S(6));
+            SetTextColor(dc, primary ? (f->palette.light ? RGB(255, 255, 255) : RGB(0, 0, 0)) : f->palette.foreground);
             auto value = read(item.hwndItem);
             DrawTextW(dc, value.c_str(), -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             return TRUE;
@@ -276,7 +279,7 @@ LRESULT CALLBACK formProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         if (item.CtlType == ODT_COMBOBOX) {
             FillRect(dc, &r, f->input);
             SetTextColor(dc, f->palette.foreground);
-            r.left += 10;
+            r.left += S(10);
             if (item.itemID != static_cast<UINT>(-1)) {
                 int n = static_cast<int>(SendMessageW(item.hwndItem, CB_GETLBTEXTLEN, item.itemID, 0));
                 std::wstring value(n + 1, 0);
@@ -332,13 +335,13 @@ bool editForm(HWND owner, HFONT font, const std::wstring &title, const std::wstr
     MONITORINFO monitor{};
     monitor.cbSize = sizeof(monitor);
     GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &monitor);
-    int height = static_cast<int>(fields.size()) * 42 + 240;
-    int x = std::clamp(r.left + 30, monitor.rcWork.left,
-                       std::max(monitor.rcWork.left, monitor.rcWork.right - 790));
-    int y = std::clamp(r.top + 20, monitor.rcWork.top,
+    int height = static_cast<int>(fields.size()) * S(42) + S(240);
+    int x = std::clamp(r.left + S(30), monitor.rcWork.left,
+                       std::max(monitor.rcWork.left, monitor.rcWork.right - S(790)));
+    int y = std::clamp(r.top + S(20), monitor.rcWork.top,
                        std::max(monitor.rcWork.top, monitor.rcWork.bottom - height));
     auto h = CreateWindowExW(WS_EX_DLGMODALFRAME, wc.lpszClassName, title.c_str(), WS_CAPTION | WS_SYSMENU, x,
-                             y, 790, height, owner, nullptr, wc.hInstance, &f);
+                             y, S(790), height, owner, nullptr, wc.hInstance, &f);
     if (!h) {
         DeleteObject(f.background);
         DeleteObject(f.input);

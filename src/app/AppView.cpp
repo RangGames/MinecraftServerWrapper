@@ -66,7 +66,7 @@ HWND App::add(const wchar_t *type, const wchar_t *label, DWORD style, int id) {
                                  nullptr);
     SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
     if (_wcsicmp(type, L"EDIT") == 0)
-        SendMessageW(child, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(10, 10));
+        SendMessageW(child, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(S(10), S(10)));
     SetWindowTheme(child, L"", L"");
     if (_wcsicmp(type, L"EDIT") == 0 || _wcsicmp(type, L"COMBOBOX") == 0 || _wcsicmp(type, L"BUTTON") == 0)
         SetWindowSubclass(child, inputProc, 2, reinterpret_cast<DWORD_PTR>(this));
@@ -96,7 +96,7 @@ void App::listColumns(int id, const std::vector<std::pair<std::wstring, int>> &c
     for (size_t i = 0; i < columns.size(); ++i) {
         LVCOLUMNW column{};
         column.mask = LVCF_TEXT | LVCF_WIDTH;
-        column.cx = columns[i].second;
+        column.cx = S(columns[i].second);
         columnLabels[id].push_back(columns[i].first);
         auto label = tr(columns[i].first);
         column.pszText = label.data();
@@ -132,15 +132,14 @@ void App::refreshPageData() {
 }
 
 void App::showPage(int value) {
+    int previous = page;
     page = std::clamp(value, 0, PageCount - 1);
     refreshPageData();
     layout();
     updateControls();
-    InvalidateRect(window, nullptr, FALSE);
-    for (int i = 0; i < PageCount; ++i)
-        InvalidateRect(control(DashboardTab + i), nullptr, TRUE);
-    for (int id : {RailHome, RailConsole, RailSettings})
-        InvalidateRect(control(id), nullptr, TRUE);
+    // layout() already repainted the page area; only the old and new navigation items change.
+    InvalidateRect(control(DashboardTab + previous), nullptr, FALSE);
+    InvalidateRect(control(DashboardTab + page), nullptr, FALSE);
 }
 
 void App::updateControls() {
@@ -269,11 +268,11 @@ void App::create(HWND hwnd) {
         return CreateFontW(height, 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                            CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
     };
-    font = makeFont(-15, FW_NORMAL, L"Segoe UI");
-    small = makeFont(-12, FW_NORMAL, L"Segoe UI");
-    mono = makeFont(-14, FW_NORMAL, L"Consolas");
-    large = makeFont(-26, FW_NORMAL, L"Segoe UI");
-    heading = makeFont(-22, FW_NORMAL, L"Segoe UI");
+    font = makeFont(-S(15), FW_NORMAL, L"Segoe UI");
+    small = makeFont(-S(12), FW_NORMAL, L"Segoe UI");
+    mono = makeFont(-S(14), FW_NORMAL, L"Consolas");
+    large = makeFont(-S(26), FW_NORMAL, L"Segoe UI");
+    heading = makeFont(-S(22), FW_NORMAL, L"Segoe UI");
     bgBrush = CreateSolidBrush(Background);
     surfaceBrush = CreateSolidBrush(Surface);
     panelBrush = CreateSolidBrush(Panel);
@@ -286,8 +285,8 @@ void App::create(HWND hwnd) {
         WS_TABSTOP | WS_HSCROLL | LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_MULTICOLUMN |
             LBS_NOINTEGRALHEIGHT,
         ServerSelector);
-    SendMessageW(control(ServerSelector), LB_SETITEMHEIGHT, 0, 48);
-    SendMessageW(control(ServerSelector), LB_SETCOLUMNWIDTH, 292, 0);
+    SendMessageW(control(ServerSelector), LB_SETITEMHEIGHT, 0, S(48));
+    SendMessageW(control(ServerSelector), LB_SETCOLUMNWIDTH, S(292), 0);
     button(L"그룹 관리자", GroupManager);
     button(L"서버 추가", AddServer);
     button(L"홈", RailHome);

@@ -1,5 +1,7 @@
 #include "UiMessageBox.h"
 #include "Localization.h"
+#include "UiScale.h"
+#include "UiSurface.h"
 #include <commctrl.h>
 #include <shellapi.h>
 #include <dwmapi.h>
@@ -49,16 +51,16 @@ INT_PTR CALLBACK messageProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         MONITORINFO monitor{};
         monitor.cbSize = sizeof(monitor);
         GetMonitorInfoW(MonitorFromWindow(GetWindow(hwnd, GW_OWNER), MONITOR_DEFAULTTONEAREST), &monitor);
-        int width = std::clamp<LONG>(monitor.rcWork.right - monitor.rcWork.left - 40, 360, 640);
+        int width = std::clamp<LONG>(monitor.rcWork.right - monitor.rcWork.left - S(40), S(360), S(640));
         HDC dc = GetDC(hwnd);
         auto previous = SelectObject(dc, data->font);
-        RECT measure{0, 0, width - 112, 0};
+        RECT measure{0, 0, width - S(112), 0};
         DrawTextW(dc, data->body.c_str(), -1, &measure, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
         SelectObject(dc, previous);
         ReleaseDC(hwnd, dc);
         int bodyHeight = std::clamp<LONG>(
-            measure.bottom + 12, 70, std::max<LONG>(70, monitor.rcWork.bottom - monitor.rcWork.top - 240));
-        int height = bodyHeight + 150;
+            measure.bottom + S(12), S(70), std::max<LONG>(S(70), monitor.rcWork.bottom - monitor.rcWork.top - S(240)));
+        int height = bodyHeight + S(150);
         RECT frame{0, 0, width, height};
         AdjustWindowRectEx(&frame, GetWindowLongW(hwnd, GWL_STYLE), FALSE, GetWindowLongW(hwnd, GWL_EXSTYLE));
         RECT owner{};
@@ -70,20 +72,20 @@ INT_PTR CALLBACK messageProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
                            std::max(monitor.rcWork.top, monitor.rcWork.bottom - outerH));
         SetWindowPos(hwnd, nullptr, x, y, outerW, outerH, SWP_NOZORDER);
         auto heading = data->tr(data->confirm() ? L"확인" : (data->flags & MB_ICONERROR) ? L"오류" : L"안내");
-        add(L"STATIC", heading, 0, 10, 72, 22, width - 96, 30);
+        add(L"STATIC", heading, 0, 10, S(72), S(22), width - S(96), S(30));
         add(L"EDIT", data->body,
             ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | (measure.bottom > bodyHeight ? WS_VSCROLL : 0), 11,
-            72, 66, width - 100, bodyHeight);
-        int buttonY = height - 52;
+            S(72), S(66), width - S(100), bodyHeight);
+        int buttonY = height - S(52);
         if (data->eula)
-            add(L"BUTTON", data->tr(L"EULA 열기"), WS_TABSTOP | BS_OWNERDRAW, 8, 24, buttonY, 120, 34);
+            add(L"BUTTON", data->tr(L"EULA 열기"), WS_TABSTOP | BS_OWNERDRAW, 8, S(24), buttonY, S(120), S(34));
         if (data->confirm()) {
-            add(L"BUTTON", data->tr(L"확인"), WS_TABSTOP | BS_OWNERDRAW, IDYES, width - 260, buttonY, 112,
-                34);
-            add(L"BUTTON", data->tr(L"취소"), WS_TABSTOP | BS_OWNERDRAW, IDNO, width - 136, buttonY, 112, 34);
+            add(L"BUTTON", data->tr(L"확인"), WS_TABSTOP | BS_OWNERDRAW, IDYES, width - S(260), buttonY,
+                S(112), S(34));
+            add(L"BUTTON", data->tr(L"취소"), WS_TABSTOP | BS_OWNERDRAW, IDNO, width - S(136), buttonY, S(112), S(34));
         } else
-            add(L"BUTTON", data->english ? L"OK" : L"확인", WS_TABSTOP | BS_OWNERDRAW, IDOK, width - 136,
-                buttonY, 112, 34);
+            add(L"BUTTON", data->english ? L"OK" : L"확인", WS_TABSTOP | BS_OWNERDRAW, IDOK, width - S(136),
+                buttonY, S(112), S(34));
         int defaultId = data->confirm() ? IDNO : IDOK;
         SendMessageW(hwnd, DM_SETDEFID, defaultId, 0);
         SetFocus(GetDlgItem(hwnd, defaultId));
@@ -123,23 +125,24 @@ INT_PTR CALLBACK messageProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         HDC dc = item.hDC;
         int saved = SaveDC(dc);
         fillBox(dc, item.rcItem, data->colors.panel);
-        bool focus = (item.itemState & ODS_FOCUS) != 0;
-        COLORREF background = (item.itemState & ODS_SELECTED) ? data->colors.accent : data->colors.panel;
-        HBRUSH brush = CreateSolidBrush(background);
-        HPEN pen = CreatePen(PS_SOLID, 1, focus ? data->colors.accent : data->colors.border);
-        SelectObject(dc, brush);
-        SelectObject(dc, pen);
-        RoundRect(dc, item.rcItem.left, item.rcItem.top, item.rcItem.right, item.rcItem.bottom, 8, 8);
+        bool focus = (item.itemState & ODS_FOCUS) != 0, pressed = (item.itemState & ODS_SELECTED) != 0;
+        // Fluent dialog buttons: the affirmative action uses the accent color.
+        bool primary = item.CtlID == IDOK || item.CtlID == IDYES;
+        COLORREF background = primary ? data->colors.accent : data->colors.background;
+        if (pressed)
+            background = RGB((GetRValue(background) * 4 + GetRValue(data->colors.panel)) / 5,
+                             (GetGValue(background) * 4 + GetGValue(data->colors.panel)) / 5,
+                             (GetBValue(background) * 4 + GetBValue(data->colors.panel)) / 5);
+        roundedSurface(dc, item.rcItem, background,
+                       focus ? data->colors.text : primary ? background : data->colors.border, S(6));
         wchar_t label[128]{};
         GetWindowTextW(item.hwndItem, label, 128);
         RECT rect = item.rcItem;
         SelectObject(dc, data->font);
         SetBkMode(dc, TRANSPARENT);
-        SetTextColor(dc, (item.itemState & ODS_SELECTED) ? contrastText(background) : data->colors.text);
+        SetTextColor(dc, contrastText(background));
         DrawTextW(dc, label, -1, &rect, DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_NOPREFIX);
         RestoreDC(dc, saved);
-        DeleteObject(brush);
-        DeleteObject(pen);
         return TRUE;
     }
     case WM_ERASEBKGND:
@@ -151,17 +154,17 @@ INT_PTR CALLBACK messageProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         GetClientRect(hwnd, &rect);
         fillBox(dc, rect, data->colors.background);
         RECT bottom = rect;
-        bottom.top = bottom.bottom - 72;
+        bottom.top = bottom.bottom - S(72);
         fillBox(dc, bottom, data->colors.panel);
         COLORREF color = (data->flags & MB_ICONERROR) ? RGB(222, 85, 85) : data->colors.accent;
         HBRUSH brush = CreateSolidBrush(color);
         auto oldBrush = SelectObject(dc, brush);
         auto oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
-        Ellipse(dc, 24, 22, 56, 54);
+        Ellipse(dc, S(24), S(22), S(56), S(54));
         SelectObject(dc, oldBrush);
         SelectObject(dc, oldPen);
         DeleteObject(brush);
-        RECT icon{24, 22, 56, 54};
+        RECT icon{S(24), S(22), S(56), S(54)};
         SelectObject(dc, data->heading);
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, contrastText(color));

@@ -24,7 +24,7 @@ void App::openGroupManager() {
         }
     }
     CreateWindowExW(WS_EX_CONTROLPARENT, cls.lpszClassName, tr(L"그룹 관리자").c_str(),
-                    WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 980, 680, window,
+                    WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, S(980), S(680), window,
                     nullptr, cls.hInstance, this);
     if (groupWindow) {
         ShowWindow(groupWindow, SW_SHOW);
@@ -34,9 +34,10 @@ void App::openGroupManager() {
 void App::layoutGroupManager() {
     RECT rect{};
     GetClientRect(groupWindow, &rect);
-    int w = rect.right, h = rect.bottom;
+    // Logical (96-DPI) coordinates, scaled on placement.
+    int w = MulDiv(rect.right, 96, UiDpi), h = MulDiv(rect.bottom, 96, UiDpi);
     auto place = [&](int id, int x, int y, int width, int height) {
-        MoveWindow(GetDlgItem(groupWindow, id), x, y, width, height, TRUE);
+        MoveWindow(GetDlgItem(groupWindow, id), S(x), S(y), S(x + width) - S(x), S(y + height) - S(y), TRUE);
     };
     place(ManagerHeading, 24, 18, w - 268, 32);
     place(ManagerHint, 24, 54, w - 48, 42);
@@ -263,7 +264,7 @@ LRESULT CALLBACK App::groupManagerProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
         app->layoutGroupManager();
         return 0;
     case WM_GETMINMAXINFO:
-        reinterpret_cast<MINMAXINFO *>(l)->ptMinTrackSize = {870, 580};
+        reinterpret_cast<MINMAXINFO *>(l)->ptMinTrackSize = {S(870), S(580)};
         return 0;
     case WM_COMMAND: {
         int id = LOWORD(w), code = HIWORD(w);
@@ -280,7 +281,7 @@ LRESULT CALLBACK App::groupManagerProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
         return 0;
     }
     case WM_MEASUREITEM:
-        reinterpret_cast<MEASUREITEMSTRUCT *>(l)->itemHeight = 32;
+        reinterpret_cast<MEASUREITEMSTRUCT *>(l)->itemHeight = S(32);
         return TRUE;
     case WM_DRAWITEM: {
         auto &item = *reinterpret_cast<DRAWITEMSTRUCT *>(l);
@@ -293,18 +294,21 @@ LRESULT CALLBACK App::groupManagerProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
         SendMessageW(item.hwndItem, LB_GETTEXT, item.itemID, reinterpret_cast<LPARAM>(label.data()));
         int saved = SaveDC(item.hDC);
         bool selected = (item.itemState & ODS_SELECTED) != 0;
-        fill(item.hDC, item.rcItem, selected ? Surface : Panel);
-        RECT rect = item.rcItem;
-        rect.left += 12;
-        rect.right -= 8;
+        // Same selection treatment as the navigation view: subtle fill and a short accent pill.
+        fill(item.hDC, item.rcItem, Panel);
         if (selected) {
-            RECT bar = item.rcItem;
-            bar.right = bar.left + 3;
-            fill(item.hDC, bar, Accent);
+            RECT row = item.rcItem;
+            InflateRect(&row, -S(2), -S(1));
+            fill(item.hDC, row, Subtle);
+            int middle = (item.rcItem.top + item.rcItem.bottom) / 2;
+            fill(item.hDC, {row.left, middle - S(8), row.left + S(3), middle + S(8)}, Accent);
         }
+        RECT rect = item.rcItem;
+        rect.left += S(14);
+        rect.right -= S(8);
         SelectObject(item.hDC, app->font);
         SetBkMode(item.hDC, TRANSPARENT);
-        SetTextColor(item.hDC, selected ? Accent : Foreground);
+        SetTextColor(item.hDC, Foreground);
         DrawTextW(item.hDC, label.c_str(), -1, &rect,
                   DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
         RestoreDC(item.hDC, saved);

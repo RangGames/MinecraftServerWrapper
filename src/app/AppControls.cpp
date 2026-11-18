@@ -9,28 +9,78 @@ void App::drawCheckbox(HWND hwnd, HDC dc) {
     fill(dc, rect, backdrop(hwnd));
     bool checked = SendMessageW(hwnd, BM_GETCHECK, 0, 0) == BST_CHECKED,
          enabled = IsWindowEnabled(hwnd) != FALSE;
-    int y = (rect.bottom - 20) / 2;
+    int box = S(20), y = (rect.bottom - box) / 2;
     // Fluent check box: rounded square, accent fill when checked, neutral stroke otherwise.
     COLORREF fillColor = checked ? (enabled ? Accent : Muted) : Field;
     COLORREF stroke = checked ? fillColor : GetFocus() == hwnd ? Accent : enabled ? Muted : Border;
-    roundedSurface(dc, {1, y, 21, y + 20}, fillColor, stroke, 4);
+    roundedSurface(dc, {S(1), y, S(1) + box, y + box}, fillColor, stroke, S(4));
     if (checked) {
-        HPEN tick = CreatePen(PS_SOLID, 2, OnAccent);
+        HPEN tick = CreatePen(PS_SOLID, S(2), OnAccent);
         auto oldPen = SelectObject(dc, tick);
-        MoveToEx(dc, 6, y + 10, nullptr);
-        LineTo(dc, 9, y + 13);
-        LineTo(dc, 16, y + 6);
+        MoveToEx(dc, S(6), y + S(10), nullptr);
+        LineTo(dc, S(9), y + S(13));
+        LineTo(dc, S(16), y + S(6));
         SelectObject(dc, oldPen);
         DeleteObject(tick);
     }
     auto value = text(hwnd);
-    rect.left = 30;
+    rect.left = S(30);
     rect.right -= 4;
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, enabled ? Foreground : Muted);
     SelectObject(dc, reinterpret_cast<HFONT>(SendMessageW(hwnd, WM_GETFONT, 0, 0)));
     DrawTextW(dc, value.c_str(), -1, &rect, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
     RestoreDC(dc, saved);
+}
+
+void App::drawCombo(HWND hwnd, HDC target) {
+    RECT rect{};
+    GetClientRect(hwnd, &rect);
+    int width = std::max(1L, rect.right), height = std::max(1L, rect.bottom);
+    HDC dc = CreateCompatibleDC(target);
+    HBITMAP bitmap = CreateCompatibleBitmap(target, width, height);
+    auto oldBitmap = SelectObject(dc, bitmap);
+    bool enabled = IsWindowEnabled(hwnd) != FALSE, focused = GetFocus() == hwnd,
+         open = SendMessageW(hwnd, CB_GETDROPPEDSTATE, 0, 0) != FALSE,
+         hover = GetPropW(hwnd, L"Hover") != nullptr;
+    COLORREF base = backdrop(hwnd);
+    fill(dc, rect, base);
+    COLORREF face = !enabled ? blend(Field, base, 0.5) : (hover || open) && !focused ? ControlHover : Field;
+    roundedSurface(dc, rect, face, focused || open ? Accent : Border, S(5));
+    if (focused || open) {
+        RECT underline{rect.left + S(3), rect.bottom - S(2), rect.right - S(3), rect.bottom};
+        fill(dc, underline, Accent);
+    }
+    // Selected item text.
+    auto index = SendMessageW(hwnd, CB_GETCURSEL, 0, 0);
+    if (index != CB_ERR) {
+        auto length = SendMessageW(hwnd, CB_GETLBTEXTLEN, index, 0);
+        if (length > 0 && length < 32768) {
+            std::wstring label(static_cast<size_t>(length) + 1, 0);
+            SendMessageW(hwnd, CB_GETLBTEXT, index, reinterpret_cast<LPARAM>(label.data()));
+            label.resize(static_cast<size_t>(length));
+            RECT textRect{rect.left + S(10), rect.top, rect.right - S(34), rect.bottom};
+            SetBkMode(dc, TRANSPARENT);
+            SetTextColor(dc, enabled ? Foreground : Muted);
+            auto font = reinterpret_cast<HFONT>(SendMessageW(hwnd, WM_GETFONT, 0, 0));
+            auto oldFont = SelectObject(dc, font ? font : this->font);
+            DrawTextW(dc, label.c_str(), -1, &textRect, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+            SelectObject(dc, oldFont);
+        }
+    }
+    // Chevron.
+    HPEN pen = CreatePen(PS_SOLID, std::max(1, S(1)), enabled ? Muted : Border);
+    auto oldPen = SelectObject(dc, pen);
+    int x = rect.right - S(18), y = (rect.top + rect.bottom) / 2;
+    MoveToEx(dc, x - S(4), y - S(2), nullptr);
+    LineTo(dc, x, y + S(2));
+    LineTo(dc, x + S(5), y - S(3));
+    SelectObject(dc, oldPen);
+    DeleteObject(pen);
+    BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+    SelectObject(dc, oldBitmap);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
 }
 
 LRESULT CALLBACK App::inputProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR data) {
@@ -48,7 +98,19 @@ LRESULT CALLBACK App::inputProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l, UINT_PT
                                                                                              : Other;
         SetPropW(hwnd, L"WrapperKind", reinterpret_cast<HANDLE>(kind));
     }
-    bool checkbox = kind == Checkbox, edit = kind == SingleLineEdit;
+    bool checkbox = kind == Checkbox, edit = kind == SingleLineEdit, combo = kind == Combo;
+    // Closed drop-down lists are painted entirely here. Letting the native control paint first and
+    // drawing over it showed the classic frame and arrow for a moment (page switches, clicks, focus).
+    if (combo && msg == WM_ERASEBKGND)
+        return 1;
+    if (combo && (msg == WM_PAINT || msg == WM_PRINTCLIENT)) {
+        PAINTSTRUCT paint{};
+        HDC target = msg == WM_PAINT ? BeginPaint(hwnd, &paint) : reinterpret_cast<HDC>(w);
+        app->drawCombo(hwnd, target);
+        if (msg == WM_PAINT)
+            EndPaint(hwnd, &paint);
+        return 0;
+    }
     if (edit && msg == WM_NCCALCSIZE) {
         auto result = DefSubclassProc(hwnd, msg, w, l);
         centerEditClient(hwnd, w, l);
@@ -92,37 +154,17 @@ LRESULT CALLBACK App::inputProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l, UINT_PT
     if (checkbox && (msg == BM_SETCHECK || msg == WM_LBUTTONUP || msg == WM_KEYUP))
         InvalidateRect(hwnd, nullptr, FALSE);
     if (edit && msg == WM_SIZE)
-        SendMessageW(hwnd, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(10, 10));
+        SendMessageW(hwnd, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(S(10), S(10)));
     if (edit && msg == WM_SETFONT)
         refreshEditFrame(hwnd);
     if (edit && (msg == WM_SETFOCUS || msg == WM_KILLFOCUS || msg == WM_ENABLE))
         RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME);
-    if (msg == WM_PAINT && kind == Combo) {
-        {
-            HDC dc = GetDC(hwnd);
-            RECT rect{};
-            GetClientRect(hwnd, &rect);
-            bool focused = GetFocus() == hwnd;
-            HBRUSH border = CreateSolidBrush(focused ? Accent : Border);
-            FrameRect(dc, &rect, border);
-            DeleteObject(border);
-            if (focused) {
-                RECT underline{rect.left, rect.bottom - 2, rect.right, rect.bottom};
-                fill(dc, underline, Accent);
-            }
-            RECT arrow{rect.right - 32, rect.top + 1, rect.right - 1, rect.bottom - (focused ? 2 : 1)};
-            fill(dc, arrow, Field);
-            HPEN pen = CreatePen(PS_SOLID, 1, IsWindowEnabled(hwnd) ? Muted : Border);
-            auto old = SelectObject(dc, pen);
-            int x = (arrow.left + arrow.right) / 2, y = (arrow.top + arrow.bottom) / 2;
-            MoveToEx(dc, x - 4, y - 2, nullptr);
-            LineTo(dc, x, y + 2);
-            LineTo(dc, x + 5, y - 3);
-            SelectObject(dc, old);
-            DeleteObject(pen);
-            ReleaseDC(hwnd, dc);
-        }
-    }
+    // The native control repaints itself directly (not via WM_PAINT) on clicks, keys, selection and
+    // focus changes; repaint ours immediately so the classic look never shows.
+    if (combo && (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP || msg == WM_KEYDOWN || msg == WM_KEYUP ||
+                  msg == WM_SETFOCUS || msg == WM_KILLFOCUS || msg == WM_ENABLE || msg == WM_CAPTURECHANGED ||
+                  msg == CB_SETCURSEL || msg == WM_SETTEXT || msg == CB_SHOWDROPDOWN || msg == WM_MOUSELEAVE))
+        RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
     (void)app;
     return result;
 }

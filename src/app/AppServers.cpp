@@ -39,11 +39,13 @@ void App::append(Server &server, const std::wstring &value, COLORREF color) {
             return;
         // Trim the control in place instead of replaying ~400k characters of colored text.
         HWND log = control(Console);
-        size_t shown = server.log.size() - value.size();
-        GETTEXTLENGTHEX query{GTL_NUMCHARS | GTL_PRECISE, 1200};
-        LONG expected = static_cast<LONG>(shown) - crlfIn(server.log, 0, shown);
         bool trimmed = false;
-        if (!consoleDirty && value.size() <= server.log.size()) {
+        // The new chunk itself may be larger than what is kept (e.g. a burst read in one poll);
+        // then part of it was trimmed too and only a full restore is correct.
+        if (!consoleDirty && value.size() <= server.log.size() && removed < start) {
+            size_t shown = server.log.size() - value.size();
+            GETTEXTLENGTHEX query{GTL_NUMCHARS | GTL_PRECISE, 1200};
+            LONG expected = static_cast<LONG>(shown) - crlfIn(server.log, 0, shown);
             SendMessageW(log, EM_SETREADONLY, FALSE, 0);
             CHARRANGE head{0, cut};
             SendMessageW(log, EM_EXSETSEL, 0, reinterpret_cast<LPARAM>(&head));
@@ -427,7 +429,8 @@ void App::playerAction(const std::wstring &action) {
         error(L"목록에서 플레이어를 선택하세요.");
         return;
     }
-    if (!confirm(name + L" 플레이어에게 " + action + L" 명령을 실행할까요?"))
+    if (!confirm(english ? L"Send \"" + action + L"\" to player " + name + L"?"
+                         : name + L" 플레이어에게 " + action + L" 명령을 실행할까요?"))
         return;
     auto command = action + L" " + name;
     if (current().process.send(command))
@@ -457,7 +460,7 @@ LRESULT CALLBACK App::serverListProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l, UI
         } else if (index >= 0 && static_cast<size_t>(index) < app->servers.size()) {
             RECT rect{};
             SendMessageW(hwnd, LB_GETITEMRECT, index, reinterpret_cast<LPARAM>(&rect));
-            if (point.x >= rect.right - 36) {
+            if (point.x >= rect.right - S(36)) {
                 if (msg == WM_LBUTTONUP && !app->closing)
                     app->removeServer(static_cast<size_t>(index));
                 return 0;

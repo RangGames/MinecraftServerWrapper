@@ -58,15 +58,16 @@ HBITMAP App::imageBitmap(const fs::path &path) {
     if (original.GetLastStatus() != Gdiplus::Ok || !original.GetWidth() || !original.GetHeight() ||
         original.GetWidth() > 8192 || original.GetHeight() > 8192)
         return nullptr;
-    Gdiplus::Bitmap scaled(28, 28, PixelFormat32bppARGB);
+    const int size = S(28);
+    Gdiplus::Bitmap scaled(size, size, PixelFormat32bppARGB);
     Gdiplus::Graphics graphics(&scaled);
     // Flatten onto the card color of the current theme (thumbnails are reloaded on theme changes).
     graphics.Clear(Gdiplus::Color(255, GetRValue(Panel), GetGValue(Panel), GetBValue(Panel)));
     graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
-    double ratio = std::min(28.0 / original.GetWidth(), 28.0 / original.GetHeight());
+    double ratio = std::min(double(size) / original.GetWidth(), double(size) / original.GetHeight());
     int width = std::max(1, static_cast<int>(original.GetWidth() * ratio)),
         height = std::max(1, static_cast<int>(original.GetHeight() * ratio));
-    graphics.DrawImage(&original, (28 - width) / 2, (28 - height) / 2, width, height);
+    graphics.DrawImage(&original, (size - width) / 2, (size - height) / 2, width, height);
     HBITMAP result = nullptr;
     scaled.GetHBITMAP(Gdiplus::Color(255, GetRValue(Panel), GetGValue(Panel), GetBValue(Panel)), &result);
     return result;

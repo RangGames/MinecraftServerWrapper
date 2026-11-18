@@ -18,9 +18,9 @@ void App::paintGraph(HDC dc, RECT rect) {
     };
     int bandHeight = (rect.bottom - rect.top) / 3;
     for (int chart = 0; chart < 3; ++chart) {
-        RECT band{rect.left + 12, rect.top + chart * bandHeight + 6, rect.right - 12,
-                  rect.top + (chart + 1) * bandHeight - 6};
-        int yTop = band.top + 24, yBottom = band.bottom - 4;
+        RECT band{rect.left + S(12), rect.top + chart * bandHeight + S(6), rect.right - S(12),
+                  rect.top + (chart + 1) * bandHeight - S(6)};
+        int yTop = band.top + S(24), yBottom = band.bottom - S(4);
         double maximum = chart == 0 ? 100 : chart == 1 ? static_cast<double>(current().memory) : 10;
         for (const auto &sample : history)
             maximum = std::max(maximum, (chart == 1   ? sample.ram
@@ -30,7 +30,7 @@ void App::paintGraph(HDC dc, RECT rect) {
         // Label on the left, live value on the right, both above the plot.
         SetTextColor(dc, Muted);
         auto chartLabel = tr(labels[chart]);
-        RECT caption{band.left, band.top, band.right, band.top + 20};
+        RECT caption{band.left, band.top, band.right, band.top + S(20)};
         DrawTextW(dc, chartLabel.c_str(), -1, &caption, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
         std::wstring value = chart == 0   ? decimal(current().process.cpuPercent()) + L" %"
                              : chart == 1 ? decimal(current().process.memoryMB(), 0) + L" MB"
@@ -40,7 +40,7 @@ void App::paintGraph(HDC dc, RECT rect) {
         Gdiplus::Pen grid(argb(CardStroke, 255), 1.0f);
         g.DrawLine(&grid, static_cast<float>(band.left), yBottom + 0.5f, static_cast<float>(band.right),
                    yBottom + 0.5f);
-        if (history.empty() || yBottom - yTop < 4)
+        if (history.empty() || yBottom - yTop < S(4))
             continue;
         std::vector<Gdiplus::PointF> points;
         points.reserve(history.size() + 2);
@@ -58,7 +58,7 @@ void App::paintGraph(HDC dc, RECT rect) {
         area.push_back({points.front().X, static_cast<float>(yBottom)});
         Gdiplus::SolidBrush shade(argb(colors[chart], lightTheme ? 28 : 40));
         g.FillPolygon(&shade, area.data(), static_cast<INT>(area.size()));
-        Gdiplus::Pen line(argb(colors[chart], 255), 2.0f);
+        Gdiplus::Pen line(argb(colors[chart], 255), static_cast<float>(S(2)));
         line.SetLineJoin(Gdiplus::LineJoinRound);
         g.DrawLines(&line, points.data(), static_cast<INT>(points.size()));
     }
@@ -110,7 +110,7 @@ LRESULT CALLBACK App::headerProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l, UINT_P
             SendMessageW(hwnd, HDM_GETITEMW, i, reinterpret_cast<LPARAM>(&item));
             RECT rect{};
             Header_GetItemRect(hwnd, i, &rect);
-            rect.left += 10;
+            rect.left += S(10);
             DrawTextW(dc, buffer, -1, &rect, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
         }
         EndPaint(hwnd, &paint);
@@ -242,10 +242,10 @@ bool App::drawItem(const DRAWITEMSTRUCT &item) {
         fill(item.hDC, item.rcItem, Field);
         if (chosen) {
             RECT row = item.rcItem;
-            InflateRect(&row, -3, -1);
-            roundedSurface(item.hDC, row, Subtle, Subtle, 4);
+            InflateRect(&row, -S(3), -S(1));
+            roundedSurface(item.hDC, row, Subtle, Subtle, S(4));
             int middle = (row.top + row.bottom) / 2;
-            fill(item.hDC, {row.left, middle - 7, row.left + 3, middle + 7}, Accent);
+            fill(item.hDC, {row.left, middle - S(7), row.left + S(3), middle + S(7)}, Accent);
         }
         if (item.itemID != static_cast<UINT>(-1)) {
             auto length = SendMessageW(item.hwndItem, CB_GETLBTEXTLEN, item.itemID, 0);
@@ -254,8 +254,8 @@ bool App::drawItem(const DRAWITEMSTRUCT &item) {
                 SendMessageW(item.hwndItem, CB_GETLBTEXT, item.itemID,
                              reinterpret_cast<LPARAM>(label.data()));
                 RECT rect = item.rcItem;
-                rect.left += field ? 8 : 12;
-                rect.right -= 6;
+                rect.left += field ? S(8) : S(12);
+                rect.right -= S(6);
                 SetBkMode(item.hDC, TRANSPARENT);
                 SetTextColor(item.hDC, (item.itemState & ODS_DISABLED) ? Muted : Foreground);
                 SelectObject(item.hDC, font);
@@ -277,38 +277,39 @@ bool App::drawItem(const DRAWITEMSTRUCT &item) {
         bool hover = hoveredServer == static_cast<int>(item.itemID);
         fill(dc, item.rcItem, Surface);
         RECT tile = item.rcItem;
-        tile.right -= 8;
-        tile.bottom -= 2;
-        roundedSurface(dc, tile, active ? Panel : hover ? ControlHover : Surface, active ? Accent : CardStroke, 8);
-        int ix = item.rcItem.left + 10, iy = item.rcItem.top + (item.rcItem.bottom - item.rcItem.top - 28) / 2;
+        tile.right -= S(8);
+        tile.bottom -= S(2);
+        roundedSurface(dc, tile, active ? Panel : hover ? ControlHover : Surface, active ? Accent : CardStroke, S(8));
+        int thumb = S(28);
+        int ix = item.rcItem.left + S(10), iy = item.rcItem.top + (item.rcItem.bottom - item.rcItem.top - thumb) / 2;
         if (server.thumbnail) {
             HDC source = CreateCompatibleDC(dc);
             auto old = SelectObject(source, server.thumbnail);
-            BitBlt(dc, ix, iy, 28, 28, source, 0, 0, SRCCOPY);
+            BitBlt(dc, ix, iy, thumb, thumb, source, 0, 0, SRCCOPY);
             SelectObject(source, old);
             DeleteDC(source);
         } else {
-            roundedSurface(dc, {ix, iy, ix + 28, iy + 28}, Subtle, Subtle, 6);
-            drawUiIcon(dc, UiIcon::Home, ix + 5, iy + 6, active ? Accent : Muted);
+            roundedSurface(dc, {ix, iy, ix + thumb, iy + thumb}, Subtle, Subtle, S(6));
+            drawUiIcon(dc, UiIcon::Home, ix + S(5), iy + S(6), active ? Accent : Muted);
         }
         bool online = server.process.running() && server.ready && !server.process.stopping();
         bool busy = server.recoverAt || (server.process.running() && !online);
         COLORREF tone = online ? Success : busy ? Caution : Muted;
         RECT label = item.rcItem;
-        label.left += 48;
-        label.right -= 30;
-        label.top += 4;
-        label.bottom = label.top + 22;
+        label.left += S(48);
+        label.right -= S(30);
+        label.top += S(4);
+        label.bottom = label.top + S(22);
         SetTextColor(dc, Foreground);
         DrawTextW(dc, server.name.c_str(), -1, &label,
                   DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
         SelectObject(dc, small);
-        dot(dc, label.left + 4, label.bottom + 9, 4, tone);
+        dot(dc, label.left + S(4), label.bottom + S(9), S(4), tone);
         RECT detail = item.rcItem;
-        detail.left = label.left + 14;
-        detail.right -= 30;
+        detail.left = label.left + S(14);
+        detail.right -= S(30);
         detail.top = label.bottom;
-        detail.bottom -= 4;
+        detail.bottom -= S(4);
         SetTextColor(dc, Muted);
         auto state = tr(server.recoverAt                 ? L"Recovery…"
                         : server.process.stopping()      ? L"Stopping…"
@@ -321,8 +322,8 @@ bool App::drawItem(const DRAWITEMSTRUCT &item) {
         if (hover) {
             bool removable = !server.process.running() && !(backupPending && backupOwner == item.itemID) &&
                              servers.size() > 1 && !closing;
-            drawUiIcon(dc, UiIcon::Close, item.rcItem.right - 30,
-                       (item.rcItem.top + item.rcItem.bottom - 16) / 2, removable ? Foreground : Border);
+            drawUiIcon(dc, UiIcon::Close, item.rcItem.right - S(30),
+                       (item.rcItem.top + item.rcItem.bottom - S(16)) / 2, removable ? Foreground : Border);
         }
         return true;
     }
@@ -362,15 +363,15 @@ bool App::drawItem(const DRAWITEMSTRUCT &item) {
         // Windows 11 navigation view: subtle fill for hover/selection, accent pill on the selected item.
         if (active || (hover && enabled))
             roundedSurface(dc, box, active ? Subtle : blend(base, Subtle, pressed ? 0.5 : 0.7),
-                           active ? Subtle : blend(base, Subtle, pressed ? 0.5 : 0.7), 6);
+                           active ? Subtle : blend(base, Subtle, pressed ? 0.5 : 0.7), S(6));
         if (active) {
             int middle = (box.top + box.bottom) / 2;
-            roundedSurface(dc, {box.left, middle - 8, box.left + 3, middle + 8}, Accent, Accent, 1);
+            roundedSurface(dc, {box.left, middle - S(8), box.left + S(3), middle + S(8)}, Accent, Accent, S(1));
         }
-        drawUiIcon(dc, icon, box.left + 14, (box.top + box.bottom - 16) / 2, active ? Accent : color);
+        drawUiIcon(dc, icon, box.left + S(14), (box.top + box.bottom - S(16)) / 2, active ? Accent : color);
         RECT label = box;
-        label.left += 46;
-        label.right -= 10;
+        label.left += S(46);
+        label.right -= S(10);
         HFONT strong = active ? semibold(itemFont ? itemFont : font) : nullptr;
         if (strong)
             SelectObject(dc, strong);
@@ -384,21 +385,21 @@ bool App::drawItem(const DRAWITEMSTRUCT &item) {
     } else if (pivot) {
         // Pivot tabs: text only, accent underline on the selected tab.
         if (hover && enabled && !active)
-            roundedSurface(dc, box, blend(base, Subtle, 0.6), blend(base, Subtle, 0.6), 6);
+            roundedSurface(dc, box, blend(base, Subtle, 0.6), blend(base, Subtle, 0.6), S(6));
         SetTextColor(dc, active ? Foreground : Muted);
         RECT label = box;
-        label.left += 8;
-        label.right -= 8;
+        label.left += S(8);
+        label.right -= S(8);
         SIZE extent{};
         GetTextExtentPoint32W(dc, value.c_str(), static_cast<int>(value.size()), &extent);
-        drawUiIcon(dc, icon, (box.left + box.right - extent.cx - 24) / 2, (box.top + box.bottom - 16) / 2 - 2,
+        drawUiIcon(dc, icon, (box.left + box.right - extent.cx - S(24)) / 2, (box.top + box.bottom - S(16)) / 2 - S(2),
                    active ? Accent : Muted);
-        label.left = (box.left + box.right - extent.cx - 24) / 2 + 24;
-        label.bottom -= 4;
+        label.left = (box.left + box.right - extent.cx - S(24)) / 2 + S(24);
+        label.bottom -= S(4);
         DrawTextW(dc, value.c_str(), -1, &label, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
         if (active) {
             int middle = (box.left + box.right) / 2;
-            roundedSurface(dc, {middle - 12, box.bottom - 3, middle + 12, box.bottom}, Accent, Accent, 1);
+            roundedSurface(dc, {middle - S(12), box.bottom - S(3), middle + S(12), box.bottom}, Accent, Accent, S(1));
         }
     } else {
         COLORREF background = Control, outline = Border;
@@ -421,7 +422,7 @@ bool App::drawItem(const DRAWITEMSTRUCT &item) {
             color = Danger;
         if (focused)
             outline = Foreground;
-        roundedSurface(dc, box, background, outline, 6);
+        roundedSurface(dc, box, background, outline, S(6));
         if (utility && id >= MenuFile && id <= MenuHelp)
             color = enabled ? Foreground : color;
         SetTextColor(dc, color);
@@ -430,10 +431,10 @@ bool App::drawItem(const DRAWITEMSTRUCT &item) {
         GetTextExtentPoint32W(dc, value.c_str(), static_cast<int>(value.size()), &extent);
         bool withIcon = icon != UiIcon::None && !(id >= MenuFile && id <= MenuHelp);
         if (withIcon) {
-            int start = std::max(label.left + 10, (label.left + label.right - extent.cx - 26) / 2);
-            drawUiIcon(dc, icon, start, (label.top + label.bottom - 16) / 2, color);
-            label.left = start + 26;
-            label.right -= 6;
+            int start = std::max(label.left + S(10), (label.left + label.right - extent.cx - S(26)) / 2);
+            drawUiIcon(dc, icon, start, (label.top + label.bottom - S(16)) / 2, color);
+            label.left = start + S(26);
+            label.right -= S(6);
         }
         DrawTextW(dc, value.c_str(), -1, &label,
                   (withIcon ? DT_LEFT : DT_CENTER) | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
@@ -450,38 +451,47 @@ void App::paintWindow() {
     HDC target = BeginPaint(window, &paint);
     RECT r{};
     GetClientRect(window, &r);
-    // Double-buffer the shell; child controls are excluded by WS_CLIPCHILDREN.
+    // Double-buffer the shell into a cached back buffer; child controls are excluded by WS_CLIPCHILDREN.
+    // Drawing is clipped to the invalid area so partial repaints (e.g. a page switch) stay cheap.
+    if (!shellBuffer || shellSize.cx < r.right || shellSize.cy < r.bottom) {
+        if (shellBuffer)
+            DeleteObject(shellBuffer);
+        shellSize = {std::max(1L, r.right), std::max(1L, r.bottom)};
+        shellBuffer = CreateCompatibleBitmap(target, shellSize.cx, shellSize.cy);
+    }
     HDC dc = CreateCompatibleDC(target);
-    HBITMAP bitmap = CreateCompatibleBitmap(target, std::max(1L, r.right), std::max(1L, r.bottom));
-    auto oldBitmap = SelectObject(dc, bitmap);
+    auto oldBitmap = SelectObject(dc, shellBuffer);
+    IntersectClipRect(dc, paint.rcPaint.left, paint.rcPaint.top, paint.rcPaint.right, paint.rcPaint.bottom);
     fill(dc, r, Background);
     // Content layer with a rounded leading corner, as in Windows 11 apps.
-    roundedSurface(dc, {SidebarWidth, 0, r.right + 16, r.bottom + 16}, Surface, CardStroke, 8);
+    roundedSurface(dc, {S(SidebarWidth), 0, r.right + S(16), r.bottom + S(16)}, Surface, CardStroke, S(8));
     SetBkMode(dc, TRANSPARENT);
     static HICON appIcon = static_cast<HICON>(
-        LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 24, 24, LR_DEFAULTCOLOR));
+        LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, S(24), S(24), LR_DEFAULTCOLOR));
     if (appIcon)
-        DrawIconEx(dc, 22, 22, appIcon, 24, 24, 0, nullptr, DI_NORMAL);
+        DrawIconEx(dc, S(22), S(22), appIcon, S(24), S(24), 0, nullptr, DI_NORMAL);
     static HFONT brandFont =
-        CreateFontW(-18, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+        CreateFontW(-S(18), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                     CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
     SelectObject(dc, brandFont);
     SetTextColor(dc, Foreground);
-    RECT title{56, 18, SidebarWidth - 12, 50};
+    RECT title{S(56), S(18), S(SidebarWidth - 12), S(50)};
     DrawTextW(dc, L"Server Desk", -1, &title, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
     SelectObject(dc, small);
     SetTextColor(dc, Muted);
-    RECT caption{24, 66, SidebarWidth - 16, 86};
+    RECT caption{S(24), S(66), S(SidebarWidth - 16), S(86)};
     auto captionText = tr(L"서버 관리");
     DrawTextW(dc, captionText.c_str(), -1, &caption, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-    for (const auto &card : cards)
-        roundedSurface(dc, card, Panel, CardStroke, 8);
+    for (const auto &card : cards) {
+        RECT overlap{};
+        if (IntersectRect(&overlap, &card, &paint.rcPaint))
+            roundedSurface(dc, card, Panel, CardStroke, S(8));
+    }
     if (statusPill.right > statusPill.left)
         roundedSurface(dc, statusPill, statusFill, statusFill, (statusPill.bottom - statusPill.top) / 2);
     BitBlt(target, paint.rcPaint.left, paint.rcPaint.top, paint.rcPaint.right - paint.rcPaint.left,
            paint.rcPaint.bottom - paint.rcPaint.top, dc, paint.rcPaint.left, paint.rcPaint.top, SRCCOPY);
     SelectObject(dc, oldBitmap);
-    DeleteObject(bitmap);
     DeleteDC(dc);
     EndPaint(window, &paint);
 }

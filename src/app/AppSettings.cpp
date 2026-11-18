@@ -275,9 +275,7 @@ void App::loadFields() {
 }
 
 void App::applyFont() {
-    HDC dc = GetDC(window);
-    int dpi = GetDeviceCaps(dc, LOGPIXELSY);
-    ReleaseDC(window, dc);
+    int dpi = UiDpi;
     auto make = [&](int points, int weight) {
         return CreateFontW(-MulDiv(points, dpi, 72), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH,

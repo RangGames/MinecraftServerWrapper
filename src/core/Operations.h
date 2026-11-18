@@ -26,6 +26,7 @@ struct FormPalette {
     COLORREF background = RGB(26, 26, 26), input = RGB(33, 33, 33), border = RGB(58, 58, 56),
              foreground = RGB(235, 235, 231), muted = RGB(165, 165, 158), accent = RGB(190, 207, 119);
     bool light = false;
+    std::wstring okText = L"저장 / 실행", cancelText = L"취소";
 };
 bool editForm(HWND owner, HFONT font, const std::wstring &title, const std::wstring &help,
               std::vector<FormField> &fields,

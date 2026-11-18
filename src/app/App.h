@@ -23,12 +23,14 @@
 #include "JarArchive.h"
 #include "Localization.h"
 #include <map>
+#include <unordered_map>
 #include "PathUtils.h"
 #include "PathValidation.h"
 #include "GroupRegistry.h"
 #include "UiMessageBox.h"
 #include "SettingsSnapshot.h"
 #include "UiIcons.h"
+#include "UiScale.h"
 #include <shellapi.h>
 #include <shlobj.h>
 #include <uxtheme.h>
@@ -418,6 +420,7 @@ class App {
     void importPlugin();
     bool importPluginFiles(const std::vector<fs::path> &paths);
     void drawCheckbox(HWND hwnd, HDC dc);
+    void drawCombo(HWND hwnd, HDC target);
     void togglePlugin();
     void chooseBackupFolder();
     void refreshBackups();
@@ -480,6 +483,13 @@ class App {
   private:
     bool backupPending = false;
     bool settingsDirty = false;
+    int layoutDepth = 0;
+    SIZE layoutSize{};
+    HBITMAP shellBuffer = nullptr; // cached back buffer for paintWindow()
+    SIZE shellSize{}; // client size of the last layout pass
+    // Last rectangle layout() gave each control, keyed by window handle so a recreated control
+    // (e.g. the console after toggling line wrap) is always placed again.
+    std::unordered_map<HWND, RECT> placedRects;
     int themeApplied = -1; // light/dark the profile thumbnails were rendered for // scheduler results waiting to be written at the end of timer()
     bool batchingConsole = false;
 };

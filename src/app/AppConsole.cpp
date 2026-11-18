@@ -18,6 +18,7 @@ void App::createConsole(bool preserve) {
         focused = GetFocus() == control(Console);
         SendMessageW(control(Console), EM_GETSEL, reinterpret_cast<WPARAM>(&begin),
                      reinterpret_cast<LPARAM>(&end));
+        placedRects.erase(control(Console));
         DestroyWindow(control(Console));
     }
     DWORD style = WS_TABSTOP | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL;

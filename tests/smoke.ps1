@@ -99,6 +99,8 @@ if (-not $compilerLine) { throw 'No CMake compiler found; build the project firs
 $compiler = ($compilerLine -split '=',2)[1]
 $env:PATH = (Split-Path $compiler) + ';' + $env:PATH
 $root = Join-Path $BuildDirectory ('smoke-' + [guid]::NewGuid().ToString('N'))
+# Keep the plugin metadata cache inside the fixture instead of the user's %LOCALAPPDATA%.
+$env:SERVERDESK_CACHE_DIR = Join-Path $root 'cache'
 [void](New-Item -ItemType Directory -Path $root)
 $mock = Join-Path $root 'mock java.exe'
 & $compiler -std=c++20 -municode -static (Join-Path $PSScriptRoot 'mock_server.cpp') -o $mock
@@ -478,7 +480,8 @@ try {
  Wait-Until { [UI]::SendMessage([UI]::GetDlgItem($h,350),0x1004,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -eq 1 } 'plugins tab lists JAR files'
  Wait-Until { [UI]::ListCell([UI]::GetDlgItem($h,350),$p.Id,1) -eq 'ActualPlugin' -and [UI]::ListCell([UI]::GetDlgItem($h,350),$p.Id,2) -eq '1.2.3' } 'actual plugin name and version displayed from deflated plugin.yml'
  $hash=(Get-FileHash $plugin -Algorithm SHA256).Hash.ToLowerInvariant()
- if (-not (Test-Path (Join-Path $root ('plugin-cache/'+$hash+'.txt')))) { throw 'SHA-256 metadata cache missing' }
+ if (-not (Test-Path (Join-Path $root ('cache/plugin-cache/'+$hash+'.txt')))) { throw 'SHA-256 metadata cache missing' }
+ if (Test-Path (Join-Path $root 'plugin-cache')) { throw 'Plugin cache was created next to the EXE' }
  Write-Output 'PASS: SHA-256 text cache matches JAR contents' 
  function Select-Row($id) {
   $list=[UI]::GetDlgItem($script:h,$id)

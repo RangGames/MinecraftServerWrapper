@@ -13,6 +13,7 @@ public static class OpsUI {
 '@
 $BuildDirectory=(Resolve-Path $BuildDirectory).Path
 $root=Join-Path ([IO.Path]::GetTempPath()) ('wrapper-e2e-'+[guid]::NewGuid().ToString('N'))
+$env:SERVERDESK_CACHE_DIR=Join-Path $root 'cache'  # keep the plugin cache inside the fixture
 $server=Join-Path $root 'server'
 $backups=Join-Path $root 'backups'
 [void](New-Item -ItemType Directory $server -Force)

@@ -247,6 +247,6 @@ void App::deletePreset() {
     saveSettings();
     SendMessageW(control(TaskPreset), CB_SETCURSEL, 0, 0);
     refreshPresets();
-    set(PresetName, L"");
+    set(PresetName, std::wstring());
 }
 } // namespace wrapper

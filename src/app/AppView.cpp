@@ -445,7 +445,7 @@ bool App::keyboard(MSG &msg) {
                     --historyPosition;
                 if (msg.wParam == VK_DOWN && historyPosition < commandHistory.size())
                     ++historyPosition;
-                set(Command, historyPosition < commandHistory.size() ? commandHistory[historyPosition] : L"");
+                set(Command, historyPosition < commandHistory.size() ? commandHistory[historyPosition] : std::wstring());
                 SendMessageW(control(Command), EM_SETSEL, text(control(Command)).size(),
                              text(control(Command)).size());
                 return true;

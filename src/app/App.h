@@ -345,7 +345,8 @@ class App {
     unsigned fontPoints = 11;
     bool wrapping = true, autoScroll = true, closing = false, loading = false, timersBusy = false;
     ULONGLONG closeTime = 0, lastSample = 0;
-    fs::path settings, backupSource;
+    fs::path settings, backupSource, pluginCache;
+    void choosePluginCache();
     std::vector<std::pair<std::wstring, unsigned>> intervalPresets;
     std::vector<std::wstring> serverGroups;
     std::wstring selectedGroup;

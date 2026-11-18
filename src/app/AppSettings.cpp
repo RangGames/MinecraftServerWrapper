@@ -20,10 +20,47 @@ unsigned App::iniNumber(const std::wstring &section, const std::wstring &key, un
     return parsed <= max ? static_cast<unsigned>(parsed) : fallback;
 }
 
+// Plugin metadata is a cache, so it lives in %LOCALAPPDATA%\ServerDesk rather than next to the EXE.
+// SERVERDESK_CACHE_DIR overrides the location (used by the GUI tests to stay isolated).
+void App::choosePluginCache() {
+    wchar_t overrideDir[MAX_PATH]{};
+    if (GetEnvironmentVariableW(L"SERVERDESK_CACHE_DIR", overrideDir, MAX_PATH) && *overrideDir) {
+        pluginCache = fs::path(overrideDir) / L"plugin-cache";
+    } else {
+        PWSTR local = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local)))
+            pluginCache = fs::path(local) / L"ServerDesk" / L"plugin-cache";
+        CoTaskMemFree(local);
+        if (pluginCache.empty())
+            pluginCache = settings.parent_path() / L"plugin-cache";
+    }
+    // Remove the cache folder older versions kept next to the EXE, but only if it holds nothing except
+    // cache entries (<64 hex digits>.txt).
+    auto legacy = settings.parent_path() / L"plugin-cache";
+    std::error_code ec;
+    if (legacy == pluginCache || !fs::is_directory(legacy, ec))
+        return;
+    std::vector<fs::path> entries;
+    for (const auto &entry : fs::directory_iterator(legacy, ec)) {
+        auto name = entry.path().filename().wstring();
+        bool cacheEntry = entry.is_regular_file(ec) && name.size() == 68 && name.ends_with(L".txt") &&
+                          std::all_of(name.begin(), name.end() - 4, [](wchar_t c) { return std::iswxdigit(c); });
+        if (!cacheEntry)
+            return;
+        entries.push_back(entry.path());
+    }
+    if (ec)
+        return;
+    for (const auto &entry : entries)
+        fs::remove(entry, ec);
+    fs::remove(legacy, ec);
+}
+
 void App::loadSettings() {
     std::vector<wchar_t> executable(32768);
     GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
     settings = fs::path(executable.data()).parent_path() / L"wrapper.ini";
+    choosePluginCache();
     unsigned groupCount = iniNumber(L"Workspace", L"GroupCount", 0, 256);
     for (unsigned i = 0; i < groupCount; ++i)
         groupRegistry.add(ini(L"Workspace", L"Group" + std::to_wstring(i)));

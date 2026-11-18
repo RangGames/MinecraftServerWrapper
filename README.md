@@ -67,7 +67,8 @@ on other interfaces. Endpoints include `GET /api/servers`, `GET /api/servers/{id
 Give each server its own port before running several at once.
 
 Settings are stored next to the executable in `wrapper.ini` (UTF-16, written atomically), together with
-`profile-images/` and `plugin-cache/`, so the folder must be writable.
+copied profile images in `profile-images/`, so the folder must be writable. The plugin metadata cache
+lives in `%LOCALAPPDATA%\ServerDesk\plugin-cache` and can be deleted at any time.
 
 ## Building
 

@@ -48,6 +48,7 @@ public static class RegressionUI {
 }
 '@
 $root=Join-Path ([IO.Path]::GetTempPath()) ('wrapper-ui-'+[guid]::NewGuid().ToString('N'))
+$env:SERVERDESK_CACHE_DIR=Join-Path $root 'cache'  # keep the plugin cache inside the fixture
 $server=Join-Path $root 'server';$sources=Join-Path $root 'sources'
 [void](New-Item -ItemType Directory $server,$sources -Force)
 Copy-Item (Join-Path $BuildDirectory 'MinecraftServerWrapper.exe') $root

@@ -221,7 +221,7 @@ LRESULT CALLBACK App::groupManagerProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
     switch (msg) {
     case WM_CREATE: {
         auto add = [&](const wchar_t *type, const wchar_t *label, DWORD style, int id) {
-            auto display = app->tr(label);
+            auto display = *label ? app->tr(label) : std::wstring();
             HWND child = CreateWindowExW(0, type, display.c_str(), WS_CHILD | WS_VISIBLE | style, 0, 0, 0, 0,
                                          hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                                          GetModuleHandleW(nullptr), nullptr);
@@ -272,7 +272,7 @@ LRESULT CALLBACK App::groupManagerProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
             auto index = SendMessageW(GetDlgItem(hwnd, id), LB_GETCURSEL, 0, 0);
             app->selectedGroup = index > 0 && static_cast<size_t>(index - 1) < app->serverGroups.size()
                                      ? app->serverGroups[index - 1]
-                                     : L"";
+                                     : std::wstring();
             app->refreshGroupManager(true);
             return 0;
         }

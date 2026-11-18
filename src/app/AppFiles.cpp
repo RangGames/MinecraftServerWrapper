@@ -231,7 +231,7 @@ void App::refreshPlugins() {
     pluginFiles.clear();
     auto directory = serverDirectory(current());
     pluginTicket = pluginCatalog.request(directory.empty() ? fs::path{} : directory / L"plugins",
-                                         settings.parent_path() / L"plugin-cache");
+                                         pluginCache);
 }
 void App::pollPlugins() {
     auto result = pluginCatalog.poll();

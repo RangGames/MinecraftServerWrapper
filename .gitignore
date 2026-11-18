@@ -1,0 +1,9 @@
+/cmake-build-*/
+/build/
+/.idea/
+/wrapper.ini
+/profile-images/
+/plugin-cache/
+CLAUDE.md
+README.md
+docs

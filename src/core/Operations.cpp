@@ -27,6 +27,9 @@ bool removePathTree(const std::filesystem::path &path) {
     DWORD attributes = GetFileAttributesW(full.c_str());
     if (attributes == INVALID_FILE_ATTRIBUTES)
         return GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND;
+    // Copies keep the read-only attribute; clear it so cleanup and pruning do not fail.
+    if (attributes & FILE_ATTRIBUTE_READONLY)
+        SetFileAttributesW(full.c_str(), attributes & ~FILE_ATTRIBUTE_READONLY);
     if (!(attributes & FILE_ATTRIBUTE_DIRECTORY))
         return DeleteFileW(full.c_str()) != FALSE;
     if (!(attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {

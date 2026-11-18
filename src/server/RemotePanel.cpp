@@ -267,6 +267,8 @@ bool RemotePanel::start(unsigned port, std::vector<RemoteUser> users, std::wstri
                         std::lock_guard lock(mutex_);
                         queue_.push_back(request);
                     }
+                    if (auto target = static_cast<HWND>(notifyWindow_.load()))
+                        PostMessageW(target, notifyMessage_, 0, 0);
                     bool ready = false;
                     for (int i = 0; i < 100 && active_; ++i)
                         if (future.wait_for(std::chrono::milliseconds(50)) == std::future_status::ready) {

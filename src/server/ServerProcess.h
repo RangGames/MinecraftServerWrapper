@@ -19,6 +19,10 @@ class ServerProcess final {
     bool kill();
     std::wstring poll();
     bool running() const { return process_ != nullptr; }
+    // Blocks up to `milliseconds` for the server process to exit; true if it has exited.
+    bool waitExit(unsigned long milliseconds) const {
+        return !process_ || WaitForSingleObject(process_, milliseconds) == WAIT_OBJECT_0;
+    }
     bool stopping() const { return stopping_; }
     unsigned long pid() const { return pid_; }
     unsigned long exitCode() const { return exitCode_; }

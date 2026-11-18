@@ -23,12 +23,19 @@ class RemotePanel {
     void stop();
     void setUsers(std::vector<RemoteUser> users);
     std::vector<std::shared_ptr<RemoteRequest>> pending();
+    // Posts `message` to `window` (an HWND) whenever a request is queued.
+    void setNotify(void *window, unsigned message) {
+        notifyWindow_ = window;
+        notifyMessage_ = message;
+    }
     unsigned port() const { return port_; }
     bool running() const { return active_; }
 
   private:
     unsigned port_ = 0;
     std::atomic<bool> active_{false};
+    std::atomic<void *> notifyWindow_{nullptr};
+    std::atomic<unsigned> notifyMessage_{0};
     std::thread worker_;
     std::mutex mutex_;
     std::vector<RemoteUser> users_;

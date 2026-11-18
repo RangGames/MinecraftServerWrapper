@@ -59,8 +59,10 @@ std::vector<NativeEntry> nativeEntries(const fs::path &directory) {
     FindClose(find);
     return result;
 }
-void copyTree(const fs::path &source, const fs::path &destination, std::stop_token stop,
-              std::atomic<unsigned long long> &files, const fs::path &excluded, bool skipLinks) {
+// Returns the number of links/junctions skipped (only when skipLinks is set).
+size_t copyTree(const fs::path &source, const fs::path &destination, std::stop_token stop,
+                std::atomic<unsigned long long> &files, const fs::path &excluded, bool skipLinks) {
+    size_t skipped = 0;
     std::vector<std::pair<fs::path, fs::path>> pending{{source, destination}};
     auto excludedPath = excluded.empty() ? std::wstring{} : extendedPath(excluded).wstring();
     while (!pending.empty()) {
@@ -70,8 +72,10 @@ void copyTree(const fs::path &source, const fs::path &destination, std::stop_tok
             if (stop.stop_requested())
                 throw std::runtime_error("copy canceled");
             if (entry.attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-                if (skipLinks)
+                if (skipLinks) {
+                    ++skipped;
                     continue;
+                }
                 throw std::runtime_error("link in backup");
             }
             auto target = output / entry.path.filename();
@@ -90,6 +94,7 @@ void copyTree(const fs::path &source, const fs::path &destination, std::stop_tok
             }
         }
     }
+    return skipped;
 }
 } // namespace
 BackupJob::~BackupJob() {
@@ -158,7 +163,9 @@ bool BackupJob::start(const fs::path &source, const fs::path &destinationRoot, s
                 fs::create_directories(partial.parent_path());
                 if (!fs::create_directory(partial))
                     throw std::runtime_error("Backup name already exists");
-                copyTree(src, partial, stop, files_, wrapper, true);
+                auto skippedLinks = copyTree(src, partial, stop, files_, wrapper, true);
+                if (skippedLinks)
+                    result += L" (링크·정션 " + std::to_wstring(skippedLinks) + L"개 제외)";
                 {
                     std::ofstream marker(partial / L".wrapper-backup", std::ios::binary);
                     marker << "MinecraftServerWrapper backup v1";
@@ -176,7 +183,8 @@ bool BackupJob::start(const fs::path &source, const fs::path &destinationRoot, s
                     if (!runPowerShell(script))
                         throw std::runtime_error("compression failed");
                     fs::rename(archive, target);
-                    removePathTree(partial);
+                    if (!removePathTree(partial))
+                        result += L" 임시 폴더 정리 실패: " + partial.wstring();
                 } else
                     fs::rename(partial, target);
                 // Only prune completed snapshots created in this profile's dedicated backup folder.

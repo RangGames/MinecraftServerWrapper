@@ -42,6 +42,13 @@ std::string ServerProperties::get(const std::string &key, const std::string &fal
 }
 bool ServerProperties::save(const std::filesystem::path &path,
                             const std::map<std::string, std::string> &changes) const {
+    for (const auto &[key, value] : changes) {
+        size_t trailing = 0;
+        for (auto i = value.rbegin(); i != value.rend() && *i == '\\'; ++i)
+            ++trailing;
+        if (trailing % 2) // Java properties would treat it as a line continuation
+            return false;
+    }
     wchar_t temporary[MAX_PATH]{};
     if (!GetTempFileNameW(path.parent_path().c_str(), L"prp", 0, temporary))
         return false;

@@ -91,7 +91,11 @@ std::pair<std::string, std::string> metadata(const std::filesystem::path &path) 
 PluginCatalog::PluginCatalog() : worker_([this](std::stop_token stop) { work(stop); }) {
 }
 PluginCatalog::~PluginCatalog() {
-    worker_.request_stop();
+    {
+        // Stop under the mutex so the worker cannot miss the wakeup between its predicate check and wait.
+        std::lock_guard lock(mutex_);
+        worker_.request_stop();
+    }
     wake_.notify_all();
     worker_.join();
 }

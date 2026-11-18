@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <filesystem>
 #include <string>
+#include <vector>
 inline std::wstring normalizePathInput(std::wstring value, const std::filesystem::path &base,
                                        bool allowCommand = false) {
     auto first = value.find_first_not_of(L" \t\r\n");
@@ -28,12 +29,19 @@ inline std::wstring normalizePathInput(std::wstring value, const std::filesystem
 inline bool resolvedPathsOverlap(const std::filesystem::path &left, const std::filesystem::path &right) {
     if (left.empty() || right.empty())
         return false;
-    auto i = left.begin(), j = right.begin();
-    while (i != left.end() && j != right.end() && _wcsicmp(i->c_str(), j->c_str()) == 0) {
+    // A trailing separator yields an empty last element ("C:\\S\\a\\" vs "C:\\S\\a\\b"); skip it.
+    auto parts = [](const std::filesystem::path &value) {
+        std::vector<std::wstring> result;
+        for (const auto &part : value)
+            if (!part.empty())
+                result.push_back(part.wstring());
+        return result;
+    };
+    auto a = parts(left), b = parts(right);
+    size_t i = 0;
+    while (i < a.size() && i < b.size() && _wcsicmp(a[i].c_str(), b[i].c_str()) == 0)
         ++i;
-        ++j;
-    }
-    return i == left.end() || j == right.end();
+    return i == a.size() || i == b.size();
 }
 inline bool pathsOverlap(const std::filesystem::path &a, const std::filesystem::path &b) {
     if (a.empty() || b.empty())

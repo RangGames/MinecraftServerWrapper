@@ -139,8 +139,12 @@ void ServerProcess::readLoop() {
     while (!quit_) {
         DWORD received = 0;
         // Block until output arrives or the child closes the pipe. No idle polling.
-        if (!ReadFile(output_, buffer, sizeof(buffer), &received, nullptr) || !received)
+        // End of stream is reported as a failure (ERROR_BROKEN_PIPE); a successful zero-byte read
+        // only means the child performed an empty write.
+        if (!ReadFile(output_, buffer, sizeof(buffer), &received, nullptr))
             break;
+        if (!received)
+            continue;
         std::lock_guard lock(mutex_);
         if (incoming_.size() + received > 1024 * 1024)
             incoming_ = "\n[Wrapper] Display buffer full; see logs/latest.log.\n";
@@ -265,14 +269,46 @@ void ServerProcess::sample() {
         cpu_ = memoryMB_ = 0;
         return;
     }
-    PROCESS_MEMORY_COUNTERS memory{};
-    memory.cb = sizeof(memory);
-    if (GetProcessMemoryInfo(process_, &memory, sizeof(memory)))
-        memoryMB_ = memory.WorkingSetSize / 1048576.0;
-    FILETIME created{}, exited{}, kernel{}, user{};
+    // Measure every process in the job so launchers (cmd.exe, wrappers) report their Java child.
+    double workingSet = 0;
+    struct {
+        JOBOBJECT_BASIC_PROCESS_ID_LIST header;
+        ULONG_PTR more[63];
+    } ids{};
+    ids.header.NumberOfAssignedProcesses = 64;
+    if (job_ && QueryInformationJobObject(job_, JobObjectBasicProcessIdList, &ids, sizeof(ids), nullptr)) {
+        for (DWORD i = 0; i < ids.header.NumberOfProcessIdsInList; ++i) {
+            HANDLE member = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                        static_cast<DWORD>(ids.header.ProcessIdList[i]));
+            if (!member)
+                continue;
+            PROCESS_MEMORY_COUNTERS memory{};
+            memory.cb = sizeof(memory);
+            if (GetProcessMemoryInfo(member, &memory, sizeof(memory)))
+                workingSet += static_cast<double>(memory.WorkingSetSize);
+            CloseHandle(member);
+        }
+    }
+    if (workingSet == 0) {
+        PROCESS_MEMORY_COUNTERS memory{};
+        memory.cb = sizeof(memory);
+        if (GetProcessMemoryInfo(process_, &memory, sizeof(memory)))
+            workingSet = static_cast<double>(memory.WorkingSetSize);
+    }
+    memoryMB_ = workingSet / 1048576.0;
     ULONGLONG now = GetTickCount64();
-    if (GetProcessTimes(process_, &created, &exited, &kernel, &user)) {
-        auto current = ticks(kernel) + ticks(user);
+    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting{};
+    FILETIME created{}, exited{}, kernel{}, user{};
+    bool measured = job_ && QueryInformationJobObject(job_, JobObjectBasicAccountingInformation, &accounting,
+                                                      sizeof(accounting), nullptr);
+    if (!measured && GetProcessTimes(process_, &created, &exited, &kernel, &user)) {
+        accounting.TotalKernelTime.QuadPart = static_cast<LONGLONG>(ticks(kernel));
+        accounting.TotalUserTime.QuadPart = static_cast<LONGLONG>(ticks(user));
+        measured = true;
+    }
+    if (measured) {
+        auto current = static_cast<unsigned long long>(accounting.TotalKernelTime.QuadPart +
+                                                       accounting.TotalUserTime.QuadPart);
         DWORD processors = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
         if (sampledAt_ && now > sampledAt_ && current >= lastCpuTime_)
             cpu_ = std::clamp((current - lastCpuTime_) /

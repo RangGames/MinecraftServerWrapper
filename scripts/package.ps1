@@ -13,6 +13,9 @@
 .PARAMETER CMake
     CMake executable to use. Default: "cmake" from PATH.
 
+.PARAMETER Label
+    Optional pre-release label appended to the version, e.g. "beta" -> ServerDesk-1.0.0-beta-win64.
+
 .PARAMETER SkipBuild
     Package an existing build without configuring or building it (CI builds and tests first).
 #>
@@ -20,6 +23,7 @@
 param(
     [string]$BuildDirectory,
     [string]$CMake = "cmake",
+    [string]$Label,
     [switch]$SkipBuild
 )
 
@@ -40,6 +44,7 @@ if (-not $match.Success) {
     throw "Could not find project(... VERSION x.y.z ...) in CMakeLists.txt"
 }
 $version = $match.Groups[1].Value
+if ($Label) { $version = "$version-$Label" }
 $name = "ServerDesk-$version-win64"
 
 if (-not $SkipBuild) {
@@ -78,3 +83,9 @@ $zip = Join-Path $dist "$name.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -CompressionLevel Optimal
 Write-Host "Created $zip"
+
+# Also leave an unpacked copy next to the zip so the build can be run directly.
+$unpacked = Join-Path $dist $name
+if (Test-Path $unpacked) { Remove-Item -Recurse -Force $unpacked }
+Copy-Item -Recurse $stage $unpacked
+Write-Host "Unpacked to $unpacked"

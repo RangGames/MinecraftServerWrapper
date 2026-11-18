@@ -24,7 +24,9 @@ struct InternetHandle {
 
 std::wstring PlayerFaces::selectedName() const {
     auto index = SendMessageW(list_, LB_GETCURSEL, 0, 0);
-    return index >= 0 && static_cast<size_t>(index) < players_.size() ? players_[index].name : L"";
+    if (index < 0 || static_cast<size_t>(index) >= players_.size())
+        return {};
+    return players_[static_cast<size_t>(index)].name;
 }
 
 PlayerFaces::~PlayerFaces() {

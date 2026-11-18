@@ -119,6 +119,17 @@ int main() {
         wchar_t font[80]{};
         GetPrivateProfileStringW(L"Workspace", L"Font", L"", font, 80, ini.c_str());
         require(std::wstring(font) == L"나눔고딕", "old settings survive failed replacement");
+        {
+            // A reader that allows sharing (antivirus, editors, other tools) must not make saves fail.
+            HANDLE reader = CreateFileW(ini.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                        nullptr, OPEN_EXISTING, 0, nullptr);
+            SettingsSnapshot s(ini);
+            s.write(L"Workspace", L"Font", L"while open");
+            require(s.commit(), "settings replace succeeds while another handle has the file open");
+            CloseHandle(reader);
+            GetPrivateProfileStringW(L"Workspace", L"Font", L"", font, 80, ini.c_str());
+            require(std::wstring(font) == L"while open", "settings written while the file was open are read back");
+        }
         auto readIni = [](const fs::path &file, const wchar_t *section, const wchar_t *key) {
             wchar_t buffer[512]{};
             GetPrivateProfileStringW(section, key, L"<missing>", buffer, 512, file.c_str());

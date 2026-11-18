@@ -483,6 +483,7 @@ class App {
   private:
     bool backupPending = false;
     bool settingsDirty = false;
+    bool saveFailureReported = false;
     int layoutDepth = 0;
     SIZE layoutSize{};
     HBITMAP shellBuffer = nullptr; // cached back buffer for paintWindow()

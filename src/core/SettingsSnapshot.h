@@ -2,6 +2,8 @@
 #include <windows.h>
 #include <filesystem>
 #include <string>
+#include <cstddef>
+#include <cstring>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -65,8 +67,8 @@ class SettingsSnapshot {
         wchar_t name[MAX_PATH]{};
         if (!GetTempFileNameW(target_.parent_path().c_str(), L"ini", 0, name))
             return false;
-        HANDLE file =
-            CreateFileW(name, GENERIC_WRITE, 0, nullptr, TRUNCATE_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        HANDLE file = CreateFileW(name, GENERIC_WRITE | DELETE, 0, nullptr, TRUNCATE_EXISTING,
+                                  FILE_ATTRIBUTE_NORMAL, nullptr);
         if (file == INVALID_HANDLE_VALUE) {
             DeleteFileW(name);
             return false;
@@ -74,11 +76,44 @@ class SettingsSnapshot {
         DWORD bytes = static_cast<DWORD>(body.size() * sizeof(wchar_t)), written = 0;
         bool ok = WriteFile(file, body.data(), bytes, &written, nullptr) && written == bytes &&
                   FlushFileBuffers(file);
+        // A plain replace fails while anyone has the INI open (antivirus, editors, other readers), even with
+        // FILE_SHARE_DELETE. POSIX-semantics rename (Windows 10 1809+) replaces it anyway.
+        bool replaced = ok && posixReplace(file, target_);
         CloseHandle(file);
-        if (!ok || !MoveFileExW(name, target_.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-            DeleteFileW(name);
-            return false;
+        // Fallback for older systems or readers that deny delete sharing: retry the replace briefly.
+        for (int attempt = 0; ok && !replaced && attempt < 20; ++attempt) {
+            if (MoveFileExW(name, target_.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+                replaced = true;
+                break;
+            }
+            DWORD error = GetLastError();
+            if (error != ERROR_ACCESS_DENIED && error != ERROR_SHARING_VIOLATION)
+                break;
+            Sleep(25);
         }
-        return true;
+        if (!replaced)
+            DeleteFileW(name);
+        return replaced;
+    }
+
+  private:
+    static bool posixReplace(HANDLE file, const std::filesystem::path &target) {
+        // FILE_RENAME_INFO with the Flags member (FileRenameInfoEx); laid out by hand so it does not depend
+        // on the SDK's _WIN32_WINNT setting.
+        struct Header {
+            DWORD flags;
+            HANDLE root;
+            DWORD length;
+        };
+        const std::wstring &path = target.native();
+        std::vector<unsigned char> buffer(sizeof(Header) + (path.size() + 1) * sizeof(wchar_t));
+        auto *info = reinterpret_cast<Header *>(buffer.data());
+        info->flags = 0x1 | 0x2; // FILE_RENAME_FLAG_REPLACE_IF_EXISTS | FILE_RENAME_FLAG_POSIX_SEMANTICS
+        info->root = nullptr;
+        info->length = static_cast<DWORD>(path.size() * sizeof(wchar_t));
+        memcpy(buffer.data() + offsetof(FILE_RENAME_INFO, FileName), path.c_str(),
+               (path.size() + 1) * sizeof(wchar_t));
+        return SetFileInformationByHandle(file, static_cast<FILE_INFO_BY_HANDLE_CLASS>(22), // FileRenameInfoEx
+                                          buffer.data(), static_cast<DWORD>(buffer.size())) != FALSE;
     }
 };

@@ -189,10 +189,13 @@ bool App::saveSettings() {
         }
     }
     bool saved = snapshot.commit();
-    if (!saved)
+    // Retry on the next timer tick; report a failure streak only once.
+    settingsDirty = !saved;
+    if (!saved && !saveFailureReported)
         append(
             current(),
             L"[Wrapper] 설정 저장 실패: 이전 설정을 유지했습니다. 실행 폴더의 쓰기 권한을 확인하세요.\r\n");
+    saveFailureReported = !saved;
     return saved;
 }
 

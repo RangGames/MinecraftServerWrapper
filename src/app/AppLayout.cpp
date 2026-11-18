@@ -8,174 +8,218 @@ void App::layout() {
     RECT rect{};
     GetClientRect(window, &rect);
     int w = rect.right, h = rect.bottom;
-    int left = 256, right = w - 28, width = right - left, top = 208, bottom = h - 28;
-    int side = 244, content = width - side - 16;
+    // Content layer starts at the sidebar edge; pages begin below the server header card.
+    int left = SidebarWidth + 24, right = w - 24, width = right - left, top = 196, bottom = h - 24;
+    int side = 280, content = width - side - 16;
     std::vector<int> visible;
+    cards.clear();
     auto place = [&](int id, int x, int y, int width_, int height_) {
         visible.push_back(id);
         MoveWindow(control(id), x, y, std::max(1, width_), std::max(1, height_), TRUE);
         if (!(GetWindowLongPtrW(control(id), GWL_STYLE) & WS_VISIBLE))
             ShowWindow(control(id), SW_SHOWNA);
     };
-    for (int i = 0; i < 4; ++i)
-        place(MenuFile + i, right - 324 + i * 81, 12, 76, 28);
-    place(GroupManager, 20, h - 100, 196, 36);
-    place(AddServer, 20, h - 56, 196, 36);
-    place(ServerSelector, left, 52, width, 52);
-    place(ServerTitle, left, 122, width - 520, 36);
-    place(Status, right - 514, 126, 90, 28);
-    place(Start, right - 410, 122, 90, 36);
-    place(Stop, right - 310, 122, 84, 36);
-    place(Restart, right - 216, 122, 88, 36);
-    place(Kill, right - 118, 122, 118, 36);
-    place(ServerMeta, left, 168, width - 138, 24);
-    place(Folder, right - 128, 164, 128, 28);
+    auto card = [&](int x, int y, int width_, int height_) { cards.push_back({x, y, x + width_, y + height_}); };
+    // A card hugging a control with a small inset so its rounded corners stay visible.
+    auto framed = [&](int id, int x, int y, int width_, int height_, int inset = 6) {
+        card(x, y, width_, height_);
+        place(id, x + inset, y + inset, width_ - inset * 2, height_ - inset * 2);
+    };
+    // Form labels share the field's row and are vertically centered against it.
+    auto label = [&](int id, int x, int y, int width_) {
+        HWND hwnd = control(id);
+        auto style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        if (!(style & SS_CENTERIMAGE))
+            SetWindowLongPtrW(hwnd, GWL_STYLE, style | SS_CENTERIMAGE);
+        place(id, x, y, width_, 34);
+    };
+    auto playersCard = [&](int x, int y, int width_, int height_) {
+        card(x, y, width_, height_);
+        place(206, x + 16, y + 12, width_ - 32, 24);
+        place(PlayerFaces::ControlId, x + 6, y + 44, width_ - 12, height_ - 50);
+    };
+
+    // Sidebar: navigation and server actions.
     for (int i = 0; i < PageCount; ++i)
-        place(DashboardTab + i, 16, 146 + i * 48, 204, 42);
+        place(DashboardTab + i, 12, 92 + i * 44, SidebarWidth - 24, 40);
+    place(GroupManager, 12, h - 96, SidebarWidth - 24, 36);
+    place(AddServer, 12, h - 52, SidebarWidth - 24, 36);
+
+    // Top row: server tiles and the application menus.
+    for (int i = 0; i < 4; ++i)
+        place(MenuFile + i, right - 4 * 76 + i * 76, 28, 72, 30);
+    place(ServerSelector, left, 16, width - 4 * 76 - 16, 52);
+
+    // Server header card: name, state pill, metadata and lifecycle actions.
+    card(left, 80, width, 96);
+    int actions = right - 16 - (96 + 88 + 100 + 104 + 136 + 4 * 8);
+    place(ServerTitle, left + 20, 92, actions - left - 36, 38);
+    statusPill = {left + 20, 138, left + 20 + 100, 138 + 26};
+    place(Status, statusPill.left + 10, statusPill.top + 3, 80, 20);
+    place(ServerMeta, statusPill.right + 12, 141, actions - statusPill.right - 28, 22);
+    int x = actions;
+    for (auto [id, size] : std::initializer_list<std::pair<int, int>>{
+             {Start, 96}, {Stop, 88}, {Restart, 100}, {Kill, 104}, {Folder, 136}}) {
+        place(id, x, 111, size, 34);
+        x += size + 8;
+    }
+
     if (page == 0 && current().jar.empty() && current().launch.mode == 0) {
-        place(WelcomeTitle, left + 40, top + 64, width - 80, 48);
-        place(WelcomeBody, left + 40, top + 128, width - 80, 56);
-        place(WelcomeSteps, left + 40, top + 212, width - 80, 30);
-        place(WelcomeAction, left + 40, top + 278, 180, 42);
-        place(Installer, left + 236, top + 278, 156, 42);
+        card(left, top, width, std::min(bottom - top, 380));
+        place(WelcomeTitle, left + 40, top + 48, width - 80, 44);
+        place(WelcomeBody, left + 40, top + 104, width - 80, 56);
+        place(WelcomeSteps, left + 40, top + 176, width - 80, 30);
+        place(WelcomeAction, left + 40, top + 236, 180, 40);
+        place(Installer, left + 232, top + 236, 156, 40);
     } else if (page == 0) {
-        int card = (content - 24) / 3;
-        place(CpuTitle, left + 16, top + 10, card - 28, 22);
-        place(CpuValue, left + 16, top + 34, card - 28, 34);
-        place(RamTitle, left + card + 28, top + 10, card - 28, 22);
-        place(RamValue, left + card + 28, top + 34, card - 28, 34);
-        place(UptimeTitle, left + card * 2 + 40, top + 10, card - 28, 22);
-        place(UptimeValue, left + card * 2 + 40, top + 34, card - 28, 34);
-        place(GraphTitle, left + 12, top + 96, content - 24, 24);
-        int graphHeight = std::max(160, bottom - top - 260);
-        place(Graph, left, top + 126, content, graphHeight);
-        place(ServerHint, left + 8, top + 138 + graphHeight, content - 16, 24);
-        place(Console, left + 8, top + 166 + graphHeight, content - 16, bottom - (top + 166 + graphHeight));
-        place(206, left + content + 16, top + 8, side, 24);
-        place(PlayerFaces::ControlId, left + content + 16, top + 42, side, bottom - top - 42);
+        int metric = (content - 24) / 3;
+        int ids[3][2]{{CpuTitle, CpuValue}, {RamTitle, RamValue}, {UptimeTitle, UptimeValue}};
+        for (int i = 0; i < 3; ++i) {
+            int cx = left + i * (metric + 12);
+            card(cx, top, metric, 96);
+            place(ids[i][0], cx + 18, top + 14, metric - 36, 22);
+            place(ids[i][1], cx + 18, top + 40, metric - 36, 42);
+        }
+        int consoleHeight = std::max(170, (bottom - top - 108) * 2 / 5);
+        int graphTop = top + 108, graphHeight = bottom - graphTop - 12 - consoleHeight;
+        card(left, graphTop, content, graphHeight);
+        place(GraphTitle, left + 18, graphTop + 12, content - 36, 24);
+        place(Graph, left + 6, graphTop + 40, content - 12, graphHeight - 46);
+        int consoleTop = graphTop + graphHeight + 12;
+        card(left, consoleTop, content, bottom - consoleTop);
+        place(ServerHint, left + 18, consoleTop + 10, content - 36, 22);
+        place(Console, left + 10, consoleTop + 36, content - 20, bottom - consoleTop - 44);
+        playersCard(left + content + 16, top, side, bottom - top);
     } else if (page == 1) {
-        place(Wrap, left, top, 108, 28);
-        place(AutoScroll, left + 112, top, 112, 28);
-        place(SearchText, left + 238, top + 2, std::max(80, content - 570), 26);
-        place(FindNext, left + content - 326, top, 90, 28);
-        place(Clear, left + content - 230, top, 100, 28);
-        place(ExportLog, left + content - 124, top, 124, 28);
-        place(Console, left, top + 38, content, bottom - top - 82);
-        place(Command, left, bottom - 34, content - 94, 32);
-        place(Send, left + content - 86, bottom - 34, 86, 32);
-        place(206, left + content + 16, top + 2, side, 24);
-        place(PlayerFaces::ControlId, left + content + 16, top + 38, side, bottom - top - 38);
+        place(Wrap, left, top + 2, 116, 30);
+        place(AutoScroll, left + 124, top + 2, 124, 30);
+        place(SearchText, left + 260, top, std::max(80, content - 260 - 340), 34);
+        place(FindNext, left + content - 332, top, 96, 34);
+        place(Clear, left + content - 228, top, 100, 34);
+        place(ExportLog, left + content - 120, top, 120, 34);
+        framed(Console, left, top + 46, content, bottom - top - 46 - 48, 8);
+        place(Command, left, bottom - 36, content - 108, 36);
+        place(Send, left + content - 100, bottom - 36, 100, 36);
+        playersCard(left + content + 16, top, side, bottom - top);
     } else if (page == 2) {
         place(PluginHeading, left, top, width, 32);
-        place(PluginNote, left, top + 40, width, 24);
-        place(PluginRefresh, left, top + 78, 120, 32);
-        place(PluginImport, left + 132, top + 78, 140, 32);
-        place(PluginToggle, left + 284, top + 78, 156, 32);
-        place(PluginManage, left + 452, top + 78, 148, 32);
-        place(PluginFolder, right - 156, top + 78, 156, 32);
-        place(PluginList, left, top + 122, width, bottom - top - 122);
+        place(PluginNote, left, top + 36, width, 24);
+        place(PluginRefresh, left, top + 74, 120, 34);
+        place(PluginImport, left + 128, top + 74, 140, 34);
+        place(PluginToggle, left + 276, top + 74, 156, 34);
+        place(PluginManage, left + 440, top + 74, 148, 34);
+        place(PluginFolder, right - 156, top + 74, 156, 34);
+        framed(PluginList, left, top + 120, width, bottom - top - 120);
     } else if (page == 3) {
-        place(206, left, top, width, 28);
-        place(PlayerFaces::ControlId, left, top + 42, 300, bottom - top - 42);
-        place(PlayerInfo, left + 324, top + 44, width - 324, 58);
-        place(PlayerKick, left + 324, top + 122, 130, 34);
-        place(PlayerBan, left + 468, top + 122, 130, 34);
-        place(PlayerOp, left + 324, top + 170, 130, 34);
-        place(PlayerDeop, left + 468, top + 170, 130, 34);
-        place(PlayerManage, left + 324, top + 220, 280, 34);
+        playersCard(left, top, 320, bottom - top);
+        card(left + 336, top, width - 336, 248);
+        int px = left + 336 + 20;
+        place(PlayerInfo, px, top + 18, width - 336 - 40, 52);
+        place(PlayerKick, px, top + 84, 140, 34);
+        place(PlayerBan, px + 148, top + 84, 140, 34);
+        place(PlayerOp, px, top + 130, 140, 34);
+        place(PlayerDeop, px + 148, top + 130, 140, 34);
+        place(PlayerManage, px, top + 190, 288, 34);
     } else if (page == 4) {
         place(BackupHeading, left, top, width, 32);
-        place(BackupNote, left, top + 40, width, 28);
-        place(BackupPath, left, top + 84, width - 136, 30);
-        place(BackupChoose, right - 124, top + 84, 124, 30);
-        place(BackupNow, left, top + 128, 130, 32);
-        place(BackupFolder, left + 144, top + 128, 150, 32);
-        place(BackupOptions, left + 310, top + 128, 130, 32);
-        place(BackupRestore, left + 454, top + 128, 156, 32);
-        place(BackupInfo, left, top + 166, width, 24);
-        place(BackupList, left, top + 194, width, bottom - top - 194);
+        place(BackupNote, left, top + 36, width, 26);
+        place(BackupPath, left, top + 74, width - 136, 34);
+        place(BackupChoose, right - 128, top + 74, 128, 34);
+        place(BackupNow, left, top + 118, 130, 34);
+        place(BackupFolder, left + 138, top + 118, 150, 34);
+        place(BackupOptions, left + 296, top + 118, 130, 34);
+        place(BackupRestore, left + 434, top + 118, 156, 34);
+        place(BackupInfo, left, top + 160, width, 24);
+        framed(BackupList, left, top + 190, width, bottom - top - 190);
     } else if (page == 5) {
         place(TaskHeading, left, top, width, 32);
-        place(TaskNote, left, top + 36, width, 30);
-        place(TaskSummary, left, top + 70, width, 44);
-        place(TaskTypeLabel, left, top + 120, 180, 22);
-        place(TaskIntervalLabel, left + 202, top + 120, 110, 22);
-        place(TaskCommandLabel, left + 326, top + 120, width - 326, 22);
-        place(TaskType, left, top + 148, 190, 160);
-        place(TaskInterval, left + 202, top + 148, 110, 30);
-        place(TaskCommand, left + 326, top + 148, width - 326, 30);
-        place(TaskPreset, left, top + 194, 190, 180);
-        place(PresetName, left + 202, top + 194, 174, 32);
-        place(PresetSave, left + 384, top + 194, 116, 32);
-        place(PresetDelete, left + 508, top + 194, 124, 32);
-        place(TaskAdd, right - 246, top + 194, 118, 32);
-        place(TaskUpdate, right - 118, top + 194, 118, 32);
-        place(TaskList, left, top + 244, width, bottom - top - 292);
-        place(TaskRun, left, bottom - 34, 130, 32);
-        place(TaskToggle, left + 144, bottom - 34, 160, 32);
-        place(TaskTiming, left + 320, bottom - 34, 130, 32);
-        place(TaskDelete, right - 100, bottom - 34, 100, 32);
+        place(TaskNote, left, top + 36, width, 24);
+        place(TaskSummary, left, top + 62, width, 40);
+        // Editor card: action, interval, command, presets and add/update.
+        int ey = top + 108, inner = width - 40, ex = left + 20;
+        card(left, ey, width, 150);
+        place(TaskTypeLabel, ex, ey + 14, 180, 22);
+        place(TaskIntervalLabel, ex + 202, ey + 14, 110, 22);
+        place(TaskCommandLabel, ex + 326, ey + 14, inner - 326, 22);
+        place(TaskType, ex, ey + 40, 190, 160);
+        place(TaskInterval, ex + 202, ey + 40, 110, 32);
+        place(TaskCommand, ex + 326, ey + 40, inner - 326, 32);
+        place(TaskPreset, ex, ey + 92, 190, 180);
+        place(PresetName, ex + 202, ey + 90, 174, 34);
+        place(PresetSave, ex + 384, ey + 90, 116, 34);
+        place(PresetDelete, ex + 508, ey + 90, 124, 34);
+        place(TaskAdd, left + width - 20 - 244, ey + 90, 118, 34);
+        place(TaskUpdate, left + width - 20 - 118, ey + 90, 118, 34);
+        framed(TaskList, left, ey + 162, width, bottom - (ey + 162) - 48);
+        place(TaskRun, left, bottom - 36, 130, 36);
+        place(TaskToggle, left + 138, bottom - 36, 160, 36);
+        place(TaskTiming, left + 306, bottom - 36, 130, 36);
+        place(TaskDelete, right - 110, bottom - 36, 110, 36);
     } else {
         place(SettingsHeading, left, top, width, 32);
         for (int i = 0; i < 4; ++i)
-            place(SettingsGeneral + i, left + i * 164, top + 46, 156, 36);
-        place(SectionTitle, left, top + 104, width, 30);
-        place(SectionHint, left, top + 140, width, 42);
-        int field = left + 158, fieldWidth = width - 276, form = top + 202;
+            place(SettingsGeneral + i, left + i * 164, top + 40, 156, 40);
+        // Form card for the selected section; Save sits outside the card in the bottom-right corner.
+        int cardTop = top + 92;
+        card(left, cardTop, width, bottom - cardTop - 52);
+        int inner = left + 24, innerRight = right - 24, innerWidth = innerRight - inner;
+        place(SectionTitle, inner, cardTop + 18, innerWidth, 30);
+        place(SectionHint, inner, cardTop + 50, innerWidth, 40);
+        int field = inner + 158, fieldWidth = innerWidth - 276, form = cardTop + 104;
         if (settingsPage == 0) {
-            place(205, left, form + 4, 146, 26);
-            place(ServerName, field, form, std::min(520, width - 158), 32);
-            place(GroupNameLabel, left, form + 60, 146, 26);
-            place(GroupName, field, form + 56, 320, 32);
-            place(GroupManageSettings, field + 332, form + 56, 130, 32);
-            place(ImageNote, left, form + 116, 146, 26);
-            place(ProfileImage, field, form + 112, width - 400, 32);
-            place(ChooseImage, right - 228, form + 112, 112, 32);
-            place(ResetImage, right - 108, form + 112, 108, 32);
-            place(RemoveServer, left, form + 174, 174, 34);
+            label(205, inner, form, 146);
+            place(ServerName, field, form, std::min(520, innerWidth - 158), 34);
+            label(GroupNameLabel, inner, form + 56, 146);
+            place(GroupName, field, form + 56, 320, 34);
+            place(GroupManageSettings, field + 332, form + 56, 130, 34);
+            label(ImageNote, inner, form + 112, 146);
+            place(ProfileImage, field, form + 112, innerWidth - 400, 34);
+            place(ChooseImage, innerRight - 228, form + 112, 112, 34);
+            place(ResetImage, innerRight - 108, form + 112, 108, 34);
+            place(RemoveServer, inner, form + 176, 174, 34);
         } else if (settingsPage == 1) {
-            place(201, left, form + 4, 146, 26);
-            place(Java, field, form, fieldWidth - 120, 32);
-            place(JavaDetect, right - 220, form, 108, 32);
-            place(BrowseJava, right - 104, form, 104, 32);
-            place(202, left, form + 56, 146, 26);
-            place(Jar, field, form + 52, fieldWidth - 116, 32);
-            place(ChooseServerFolder, right - 220, form + 52, 108, 32);
-            place(BrowseJar, right - 104, form + 52, 104, 32);
-            place(203, left, form + 108, 146, 26);
-            place(Memory, field, form + 104, 120, 32);
-            place(204, field + 136, form + 108, 210, 26);
-            place(Advanced, right - 260, form + 104, 156, 32);
-            place(Installer, right - 100, form + 104, 100, 32);
-            place(PathNote, left, form + 160, width, 44);
-            place(PathValidity, left, form + 212, width, 48);
+            label(201, inner, form, 146);
+            place(Java, field, form, fieldWidth - 120, 34);
+            place(JavaDetect, innerRight - 220, form, 108, 34);
+            place(BrowseJava, innerRight - 104, form, 104, 34);
+            label(202, inner, form + 52, 146);
+            place(Jar, field, form + 52, fieldWidth - 116, 34);
+            place(ChooseServerFolder, innerRight - 220, form + 52, 108, 34);
+            place(BrowseJar, innerRight - 104, form + 52, 104, 34);
+            label(203, inner, form + 104, 146);
+            place(Memory, field, form + 104, 120, 34);
+            label(204, field + 136, form + 104, 210);
+            place(Advanced, innerRight - 264, form + 104, 156, 34);
+            place(Installer, innerRight - 100, form + 104, 100, 34);
+            place(PathNote, inner, form + 160, innerWidth, 44);
+            place(PathValidity, inner, form + 212, innerWidth, 48);
         } else if (settingsPage == 2) {
-            int col = width / 2;
-            place(PortLabel, left, form + 4, 146, 26);
-            place(PortValue, field, form, 120, 32);
-            place(MaxPlayersLabel, left + col, form + 4, 146, 26);
-            place(MaxPlayersValue, left + col + 158, form, 120, 32);
-            place(ModeLabel, left, form + 56, 146, 26);
+            int col = innerWidth / 2;
+            label(PortLabel, inner, form, 146);
+            place(PortValue, field, form, 120, 34);
+            label(MaxPlayersLabel, inner + col, form, 146);
+            place(MaxPlayersValue, inner + col + 158, form, 120, 34);
+            label(ModeLabel, inner, form + 52, 146);
             place(ModeValue, field, form + 52, 190, 180);
-            place(DifficultyLabel, left + col, form + 56, 146, 26);
-            place(DifficultyValue, left + col + 158, form + 52, 190, 180);
-            place(OnlineMode, left, form + 110, col, 30);
-            place(Whitelist, left + col, form + 110, col, 30);
-            place(Pvp, left, form + 152, col, 30);
-            place(Flight, left + col, form + 152, col, 30);
-            place(CommandBlocks, left, form + 194, col, 30);
-            place(PropertiesReload, left, form + 244, 154, 32);
+            label(DifficultyLabel, inner + col, form + 52, 146);
+            place(DifficultyValue, inner + col + 158, form + 52, 190, 180);
+            place(OnlineMode, inner, form + 110, col - 12, 30);
+            place(Whitelist, inner + col, form + 110, col, 30);
+            place(Pvp, inner, form + 152, col - 12, 30);
+            place(Flight, inner + col, form + 152, col, 30);
+            place(CommandBlocks, inner, form + 194, col - 12, 30);
+            place(PropertiesReload, inner, form + 244, 154, 34);
         } else {
-            place(LanguageLabel, left, form + 4, 146, 26);
+            label(LanguageLabel, inner, form, 146);
             place(LanguageChoice, field, form, 240, 120);
-            place(ThemeLabel, left, form + 60, 146, 26);
+            label(ThemeLabel, inner, form + 56, 146);
             place(ThemeChoice, field, form + 56, 280, 150);
-            place(BundledFontLabel, left, form + 116, 146, 26);
+            label(BundledFontLabel, inner, form + 112, 146);
             place(BundledFontChoice, field, form + 112, 280, 150);
             place(FontChoose, field, form + 166, 174, 34);
-            place(FontInfo, left, form + 220, width, 44);
+            place(FontInfo, inner, form + 220, innerWidth, 44);
         }
-        place(SaveSettings, right - 174, bottom - 40, 174, 36);
+        place(SaveSettings, right - 174, bottom - 38, 174, 38);
     }
 
     for (HWND child = GetWindow(window, GW_CHILD); child; child = GetWindow(child, GW_HWNDNEXT)) {

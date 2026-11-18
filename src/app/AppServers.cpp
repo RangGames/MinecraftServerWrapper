@@ -15,6 +15,15 @@ void App::append(Server &server, const std::wstring &value, COLORREF color) {
     if (server.log.size() > 500000) {
         auto boundary = server.log.find(L'\n', 100000);
         size_t removed = boundary == std::wstring::npos ? 100000 : boundary + 1;
+        // Rich Edit stores each CRLF as one character; count them to translate log offsets.
+        auto crlfIn = [](const std::wstring &text, size_t from, size_t to) {
+            LONG count = 0;
+            for (size_t k = from; k + 1 < to; ++k)
+                if (text[k] == L'\r' && text[k + 1] == L'\n')
+                    ++count;
+            return count;
+        };
+        LONG cut = static_cast<LONG>(removed) - crlfIn(server.log, 0, removed);
         server.log.erase(0, removed);
         std::vector<Server::Span> kept;
         for (auto span : server.spans) {
@@ -26,11 +35,27 @@ void App::append(Server &server, const std::wstring &value, COLORREF color) {
             kept.push_back(span);
         }
         server.spans = std::move(kept);
-        if (render) {
+        if (!render)
+            return;
+        // Trim the control in place instead of replaying ~400k characters of colored text.
+        HWND log = control(Console);
+        size_t shown = server.log.size() - value.size();
+        GETTEXTLENGTHEX query{GTL_NUMCHARS | GTL_PRECISE, 1200};
+        LONG expected = static_cast<LONG>(shown) - crlfIn(server.log, 0, shown);
+        bool trimmed = false;
+        if (!consoleDirty && value.size() <= server.log.size()) {
+            SendMessageW(log, EM_SETREADONLY, FALSE, 0);
+            CHARRANGE head{0, cut};
+            SendMessageW(log, EM_EXSETSEL, 0, reinterpret_cast<LPARAM>(&head));
+            SendMessageW(log, EM_REPLACESEL, FALSE, reinterpret_cast<LPARAM>(L""));
+            SendMessageW(log, EM_SETREADONLY, TRUE, 0);
+            trimmed = SendMessageW(log, EM_GETTEXTLENGTHEX, reinterpret_cast<WPARAM>(&query), 0) == expected;
+        }
+        if (!trimmed) {
             restoreConsole();
             scrollEnd();
+            return;
         }
-        return;
     }
     if (!render)
         return;
@@ -170,12 +195,21 @@ void App::removeServer(size_t index) {
         error(L"최소 한 개의 서버 프로필이 필요합니다.");
         return;
     }
-    if (servers[index]->process.running() || (backupPending && backupOwner == index)) {
+    auto busy = [&] {
+        return index >= servers.size() || servers.size() == 1 || servers[index]->process.running() ||
+               servers[index]->recoverAt != 0 || (backupPending && backupOwner == index);
+    };
+    if (busy()) {
         error(L"실행 또는 백업 중인 프로필은 제거할 수 없습니다.");
         return;
     }
     if (!confirm(servers[index]->name + L" 프로필을 제거할까요? 서버 파일은 삭제되지 않습니다."))
         return;
+    // Timers, the remote API and the group manager keep running while the confirmation is open.
+    if (busy()) {
+        error(L"실행 또는 백업 중인 프로필은 제거할 수 없습니다.");
+        return;
+    }
     servers.erase(servers.begin() + static_cast<std::ptrdiff_t>(index));
     if (backupOwner > index)
         --backupOwner;
@@ -194,7 +228,7 @@ void App::removeServer(size_t index) {
     saveSettings();
 }
 
-bool App::ensureEula(Server &server) {
+bool App::ensureEula(Server &server, bool interactive) {
     auto path = serverDirectory(server) / L"eula.txt";
     std::ifstream file(path);
     std::string line;
@@ -216,6 +250,10 @@ bool App::ensureEula(Server &server) {
         return true;
     }
     if (!server.eulaAccepted) {
+        if (!interactive) {
+            append(server, L"[Wrapper] EULA 동의가 필요해 자동 시작을 건너뛰었습니다.\r\n");
+            return false;
+        }
         if (&server != &current() || !confirm(L"Minecraft EULA에 동의하나요? 서버 등록을 진행하려면 동의가 "
                                               L"필요합니다.\nhttps://www.minecraft.net/eula"))
             return false;
@@ -226,7 +264,10 @@ bool App::ensureEula(Server &server) {
     out << "\n# Accepted explicitly in Minecraft Server Manager\neula=true\n";
     out.close();
     if (!out) {
-        error(L"eula.txt 저장에 실패했습니다. 서버 폴더 권한을 확인하세요.");
+        if (interactive)
+            error(L"eula.txt 저장에 실패했습니다. 서버 폴더 권한을 확인하세요.");
+        else
+            append(server, L"[Wrapper] eula.txt 저장에 실패했습니다. 서버 폴더 권한을 확인하세요.\r\n");
         return false;
     }
     return true;
@@ -282,7 +323,7 @@ bool App::startServer(Server &server, bool interactive) {
             return false;
         }
     }
-    if (!ensureEula(server))
+    if (!ensureEula(server, interactive))
         return false;
     std::wstring errorMessage;
     if (!server.process.start(resolved, jar, server.memory, errorMessage,
@@ -403,15 +444,20 @@ LRESULT CALLBACK App::serverListProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l, UI
         int index = HIWORD(hit) ? -1 : static_cast<int>(LOWORD(hit));
         if (msg == WM_MOUSEMOVE) {
             if (index != app->hoveredServer) {
+                for (int item : {app->hoveredServer, index})
+                    if (item >= 0) {
+                        RECT tile{};
+                        if (SendMessageW(hwnd, LB_GETITEMRECT, item, reinterpret_cast<LPARAM>(&tile)) != LB_ERR)
+                            InvalidateRect(hwnd, &tile, FALSE);
+                    }
                 app->hoveredServer = index;
-                InvalidateRect(hwnd, nullptr, FALSE);
             }
             TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, hwnd, 0};
             TrackMouseEvent(&track);
         } else if (index >= 0 && static_cast<size_t>(index) < app->servers.size()) {
             RECT rect{};
             SendMessageW(hwnd, LB_GETITEMRECT, index, reinterpret_cast<LPARAM>(&rect));
-            if (point.x >= rect.right - 24) {
+            if (point.x >= rect.right - 36) {
                 if (msg == WM_LBUTTONUP && !app->closing)
                     app->removeServer(static_cast<size_t>(index));
                 return 0;

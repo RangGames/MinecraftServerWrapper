@@ -168,15 +168,24 @@ bool PlayerFaces::draw(const DRAWITEMSTRUCT &item) const {
     const auto &player = players_[item.itemID];
     bool selected = (item.itemState & ODS_SELECTED) != 0;
     int saved = SaveDC(item.hDC);
-    SetDCBrushColor(item.hDC, selected ? (light_ ? RGB(235, 237, 225) : RGB(45, 46, 40))
-                                       : (light_ ? RGB(255, 255, 255) : RGB(33, 33, 33)));
+    SetDCBrushColor(item.hDC, background_);
     FillRect(item.hDC, &item.rcItem, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+    if (selected) {
+        // Fluent list selection: a subtle fill with a short accent pill on the leading edge.
+        RECT fillRect{item.rcItem.left + 2, item.rcItem.top + 2, item.rcItem.right - 2, item.rcItem.bottom - 2};
+        SetDCBrushColor(item.hDC, selected_);
+        FillRect(item.hDC, &fillRect, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+        int middle = (item.rcItem.top + item.rcItem.bottom) / 2;
+        RECT pill{item.rcItem.left + 2, middle - 9, item.rcItem.left + 5, middle + 9};
+        SetDCBrushColor(item.hDC, accent_);
+        FillRect(item.hDC, &pill, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+    }
     auto font = reinterpret_cast<HFONT>(SendMessageW(list_, WM_GETFONT, 0, 0));
     if (font)
         SelectObject(item.hDC, font);
     SetBkMode(item.hDC, TRANSPARENT);
-    SetTextColor(item.hDC, light_ ? RGB(35, 40, 45) : RGB(224, 224, 224));
-    int x = item.rcItem.left + 8;
+    SetTextColor(item.hDC, text_);
+    int x = item.rcItem.left + 12;
     int y = item.rcItem.top + (item.rcItem.bottom - item.rcItem.top - FaceSize) / 2;
     if (player.face) {
         HDC memory = CreateCompatibleDC(item.hDC);
@@ -188,14 +197,14 @@ bool PlayerFaces::draw(const DRAWITEMSTRUCT &item) const {
         }
     } else {
         RECT placeholder{x, y, x + FaceSize, y + FaceSize};
-        SetDCBrushColor(item.hDC, light_ ? RGB(230, 233, 235) : RGB(58, 58, 56));
+        SetDCBrushColor(item.hDC, selected_);
         FillRect(item.hDC, &placeholder, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
-        auto previous = SetTextColor(item.hDC, RGB(160, 160, 160));
+        auto previous = SetTextColor(item.hDC, muted_);
         DrawTextW(item.hDC, L"?", 1, &placeholder, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         SetTextColor(item.hDC, previous);
     }
     RECT name = item.rcItem;
-    name.left += FaceSize + 20;
+    name.left += FaceSize + 24;
     name.right -= 8;
     DrawTextW(item.hDC, player.name.c_str(), -1, &name,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
@@ -242,7 +251,7 @@ std::vector<BYTE> PlayerFaces::download(const std::wstring &name, std::stop_toke
         return {};
     InternetHandle session(WinHttpOpen(L"MinecraftServerWrapper/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
-    if (!session.value || !WinHttpSetTimeouts(session.value, 3000, 3000, 3000, 3000))
+    if (!session.value || !WinHttpSetTimeouts(session.value, 1500, 1500, 1500, 1500))
         return {};
     InternetHandle connection(WinHttpConnect(session.value, L"mc-heads.net", INTERNET_DEFAULT_HTTPS_PORT, 0));
     if (!connection.value || stop.stop_requested())
@@ -265,7 +274,7 @@ std::vector<BYTE> PlayerFaces::download(const std::wstring &name, std::stop_toke
     BYTE buffer[4096];
     auto started = GetTickCount64();
     for (;;) {
-        if (stop.stop_requested() || GetTickCount64() - started > 8000)
+        if (stop.stop_requested() || GetTickCount64() - started > 4000)
             return {};
         DWORD received = 0;
         if (!WinHttpReadData(request.value, buffer, sizeof(buffer), &received))

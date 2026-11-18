@@ -92,7 +92,7 @@ try {
  Start-Sleep -Milliseconds 60
  [RegressionUI]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
  Start-Sleep -Milliseconds 16
- foreach($delay in @(0,16,60)){if($delay){Start-Sleep -Milliseconds $delay};$color=[RegressionUI]::Pixel($check,5,10);if($color -ne (33+33*256+33*65536) -and $color -ne (190+207*256+119*65536)){throw "Native checkbox flashed while pressed: $color"}}
+ foreach($delay in @(0,16,60)){if($delay){Start-Sleep -Milliseconds $delay};$color=[RegressionUI]::Pixel($check,5,10);if($color -ne (52+52*256+52*65536) -and $color -ne (96+205*256+255*65536)){throw "Native checkbox flashed while pressed: $color"}}
  Capture $h 'neutral-checkbox-held'
  [RegressionUI]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
  Start-Sleep -Milliseconds 50

@@ -15,7 +15,8 @@ inline void centerEditClient(HWND h, WPARAM full, LPARAM data) {
     r.top += std::max(0, (available - height) / 2);
     r.bottom = r.top + height;
 }
-inline void paintEditFrame(HWND h, COLORREF background, COLORREF border) {
+// underline: optional 2px bottom stroke (Fluent focus indicator); CLR_INVALID to omit.
+inline void paintEditFrame(HWND h, COLORREF background, COLORREF border, COLORREF underline = CLR_INVALID) {
     HDC dc = GetWindowDC(h);
     RECT window{}, client{};
     GetWindowRect(h, &window);
@@ -32,6 +33,12 @@ inline void paintEditFrame(HWND h, COLORREF background, COLORREF border) {
     brush = CreateSolidBrush(border);
     FrameRect(dc, &r, brush);
     DeleteObject(brush);
+    if (underline != CLR_INVALID) {
+        RECT line{r.left, r.bottom - 2, r.right, r.bottom};
+        brush = CreateSolidBrush(underline);
+        FillRect(dc, &line, brush);
+        DeleteObject(brush);
+    }
     RestoreDC(dc, saved);
     ReleaseDC(h, dc);
 }

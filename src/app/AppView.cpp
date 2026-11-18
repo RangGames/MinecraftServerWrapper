@@ -34,8 +34,16 @@ void App::enable(int id, bool state) {
 int App::message(const std::wstring &value, const std::wstring &title, UINT flags, HWND owner) {
     if (!owner)
         owner = groupWindow && GetActiveWindow() == groupWindow ? groupWindow : window;
-    return showThemedMessage(owner, tr(value), tr(title), flags, font, heading,
-                             {Surface, Panel, Border, Foreground, Muted, Accent, lightTheme}, english);
+    // The group manager is a separate top-level window; keep it from acting while the main window
+    // waits on a confirmation (it would otherwise change state the caller already checked).
+    bool lockGroup = groupWindow && owner != groupWindow && IsWindowEnabled(groupWindow);
+    if (lockGroup)
+        EnableWindow(groupWindow, FALSE);
+    auto result = showThemedMessage(owner, tr(value), tr(title), flags, font, heading,
+                                    {Surface, Panel, Border, Foreground, Muted, Accent, lightTheme}, english);
+    if (lockGroup && groupWindow)
+        EnableWindow(groupWindow, TRUE);
+    return result;
 }
 void App::error(const std::wstring &value, HWND owner) {
     message(value, L"Minecraft Server Manager", MB_OK | MB_ICONERROR, owner);
@@ -168,6 +176,7 @@ void App::updateControls() {
                           : server.ready              ? L"Online"
                                                       : L"Starting…";
     set(Status, status);
+    statusColors();
     set(ServerTitle, server.name);
     auto path = serverDirectory(server);
     auto filename = server.launch.mode >= 2 ? fs::path(server.launch.target).filename().wstring()
@@ -268,6 +277,7 @@ void App::create(HWND hwnd) {
     bgBrush = CreateSolidBrush(Background);
     surfaceBrush = CreateSolidBrush(Surface);
     panelBrush = CreateSolidBrush(Panel);
+    fieldBrush = CreateSolidBrush(Field);
     loadSettings();
     applyTheme();
     for (int i = 0; i < 4; ++i)
@@ -285,7 +295,7 @@ void App::create(HWND hwnd) {
     button(L"설정", RailSettings);
     add(L"STATIC", L"", 0, ServerTitle);
     styleFont(ServerTitle, large);
-    add(L"STATIC", L"Offline", SS_CENTER, Status);
+    add(L"STATIC", L"Offline", SS_CENTER | SS_CENTERIMAGE, Status);
     add(L"STATIC", L"", SS_PATHELLIPSIS, ServerMeta);
     styleFont(ServerMeta, small);
     button(L"Start", Start);
@@ -406,6 +416,7 @@ void App::create(HWND hwnd) {
     DragAcceptFiles(window, TRUE);
     DragAcceptFiles(control(PluginList), TRUE);
     SetTimer(window, 1, timerInterval, nullptr);
+    remote.setNotify(window, WM_APP + 2);
     startConfiguredServices();
 }
 

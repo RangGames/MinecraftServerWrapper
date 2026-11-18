@@ -98,8 +98,14 @@ void App::operation(int id) {
     auto &s = current();
     auto form = [&](const std::wstring &title, const std::wstring &help, std::vector<FormField> &fields,
                     auto validate) {
-        return editForm(window, font, title, help, fields, validate,
-                        {Surface, Panel, Border, Foreground, Muted, Accent, lightTheme});
+        bool lockGroup = groupWindow && IsWindowEnabled(groupWindow);
+        if (lockGroup)
+            EnableWindow(groupWindow, FALSE);
+        auto result = editForm(window, font, title, help, fields, validate,
+                               {Surface, Panel, Border, Foreground, Muted, Accent, lightTheme});
+        if (lockGroup && groupWindow)
+            EnableWindow(groupWindow, TRUE);
+        return result;
     };
     auto accept = [](const std::vector<FormField> &) -> std::wstring { return {}; };
     if (closing || operationsBusy)
@@ -159,6 +165,11 @@ void App::operation(int id) {
                          return L"JAR 이외 모드는 작업 폴더를 지정하세요.";
                      return {};
                  })) {
+            // The server may have been started (recovery, remote API, group manager) while the form was open.
+            if (s.process.running() || overlapsBackup(s)) {
+                error(L"서버와 백업이 중지된 상태에서 변경하세요.");
+                return;
+            }
             s.launch.mode =
                 static_cast<int>(std::find(modes.begin(), modes.end(), f[0].value) - modes.begin());
             s.launch.directory = normalizePathInput(f[1].value, settings.parent_path());
@@ -380,11 +391,16 @@ void App::operation(int id) {
             error(L"미완료 백업은 복원할 수 없습니다.");
             return;
         }
+        auto chosen = backupFiles[i]; // a backup finishing during the confirmation reorders the list
         if (!confirm(L"선택한 백업으로 서버 폴더를 복원할까요?\n현재 폴더는 .before-restore 이름으로 "
                      L"보존합니다. 자동 실행하지 않습니다."))
             return;
+        if (overlapsRunningDirectory(s) || backupPending || installerActive || s.process.running()) {
+            error(L"서버·설치·백업을 모두 중지하세요.");
+            return;
+        }
         std::wstring err;
-        if (!backupJob.restore(backupFiles[i], serverDirectory(s), err)) {
+        if (!backupJob.restore(chosen, serverDirectory(s), err)) {
             error(err);
             return;
         }
@@ -468,13 +484,13 @@ void App::operation(int id) {
             error(L"서버와 백업을 중지하세요.");
             return;
         }
+        auto old = pluginFiles[i]; // the list may be refreshed while the dialogs below are open
         std::vector<FormField> f{{L"동작", L"JAR 교체", {L"JAR 교체", L"플러그인 제거"}}};
         if (!form(L"플러그인 파일 관리",
                   L"교체·제거 시 원본 JAR은 plugins/.wrapper-previous 아래에 보존합니다.\n새 버전의 호환성과 "
                   L"의존성은 배포처에서 확인하세요.",
                   f, accept))
             return;
-        auto old = pluginFiles[i];
         std::wstring replacement;
         if (f[0].value == L"JAR 교체") {
             replacement = chooseFile(window, L"Plugin JAR\0*.jar\0\0");
@@ -488,6 +504,10 @@ void App::operation(int id) {
         }
         if (!confirm(old.filename().wstring() + L" 파일을 " + f[0].value + L"할까요?"))
             return;
+        if (overlapsRunningDirectory(s) || overlapsBackup(s)) {
+            error(L"서버와 백업을 중지하세요.");
+            return;
+        }
         try {
             auto dir = old.parent_path() / L".wrapper-previous";
             fs::create_directories(dir);

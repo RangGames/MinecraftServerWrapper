@@ -64,6 +64,11 @@ void App::applyLanguage() {
     }
     taskEditorState();
     refreshPageData();
+    // These are composed at runtime, so rebuild them in the new language.
+    validatePathFields();
+    set(FontInfo, fontFace + L" · " + std::to_wstring(fontPoints) + L" pt · " +
+                      tr(fontFace == L"NanumGothic" || fontFace == L"Noto Sans KR" ? L"기본 제공" : L"시스템 글꼴"));
+    set(ProfileImage, draftImage.empty() ? tr(L"자동: server-icon.png (없으면 기본 아이콘)") : draftImage);
     InvalidateRect(window, nullptr, TRUE);
 }
 } // namespace wrapper

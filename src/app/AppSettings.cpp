@@ -267,7 +267,7 @@ void App::loadFields() {
     set(Jar, server.jar);
     set(Memory, std::to_wstring(server.memory));
     set(BackupPath, server.backup);
-    set(ProfileImage, server.image.empty() ? L"자동: server-icon.png (없으면 기본 아이콘)" : server.image);
+    set(ProfileImage, server.image.empty() ? tr(L"자동: server-icon.png (없으면 기본 아이콘)") : server.image);
     SendMessageW(control(Eula), BM_SETCHECK, BST_UNCHECKED, 0);
     loading = false;
     loadProperties();
@@ -284,7 +284,7 @@ void App::applyFont() {
                            fontFace.c_str());
     };
     HFONT next = make(fontPoints, FW_NORMAL), nextSmall = make(std::max(9u, fontPoints - 2), FW_NORMAL),
-          nextLarge = make(fontPoints + 9, FW_MEDIUM), nextHeading = make(fontPoints + 3, FW_SEMIBOLD);
+          nextLarge = make(fontPoints + 9, FW_SEMIBOLD), nextHeading = make(fontPoints + 4, FW_SEMIBOLD);
     if (!next || !nextSmall || !nextLarge || !nextHeading) {
         DeleteObject(next);
         DeleteObject(nextSmall);

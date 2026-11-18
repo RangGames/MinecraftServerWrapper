@@ -4,8 +4,12 @@
 namespace wrapper {
 
 void App::timer() {
-    if (timersBusy || servers.empty())
+    if (timersBusy)
         return;
+    if (servers.empty()) {
+        applyRemote();
+        return;
+    }
     timersBusy = true;
     auto now = GetTickCount64();
     bool sample = now - lastSample >= 1000;
@@ -71,15 +75,15 @@ void App::timer() {
             append(current(), L"[Installer] " + output);
         if (!installerProcess.running()) {
             installerActive = false;
+            // A modal box here would stall every timer tick (consoles, scheduler, recovery, API)
+            // until dismissed, so report it from a posted message instead.
             if (!closing)
-                message(L"설치 프로세스 종료 코드: " + std::to_wstring(installerProcess.exitCode()) +
-                            L"\n설치 폴더에서 실행 JAR 또는 BAT를 선택하세요.\n" + installerTarget,
-                        L"서버 설치", MB_OK | MB_ICONINFORMATION);
+                PostMessageW(window, WM_APP + 1, static_cast<WPARAM>(installerProcess.exitCode()), 0);
         }
     }
     faces.poll();
     pollPlugins();
-    if (auto result = backupJob.takeResult()) {
+    if (auto result = backupJob.takeResult(); result && backupOwner < servers.size()) {
         append(*servers[backupOwner], L"[Wrapper] " + *result + L"\r\n");
         backupPending = false;
         auto &owner = *servers[backupOwner];
@@ -108,10 +112,14 @@ void App::timer() {
             refreshGroupManager();
     }
     unsigned desired =
-        anyRunning || backupPending || pluginLoading || installerActive || remote.running() ? 100 : 1000;
+        anyRunning || backupPending || pluginLoading || installerActive ? 100 : 1000;
     if (desired != timerInterval) {
         timerInterval = desired;
         SetTimer(window, 1, timerInterval, nullptr);
+    }
+    if (settingsDirty) {
+        settingsDirty = false;
+        saveSettings();
     }
     timersBusy = false;
     if (closing && !anyRunning && !backupPending && !installerActive) {
@@ -126,12 +134,69 @@ void App::attach(HWND hwnd) {
 
 LRESULT App::dispatch(UINT msg, WPARAM w, LPARAM l) {
     switch (msg) {
-    case WM_DWMCOLORIZATIONCOLORCHANGED:
+    case WM_APP + 2:
+        // A remote panel request is waiting; answer it now rather than on the next timer tick.
+        if (!timersBusy)
+            applyRemote();
+        return 0;
+    case WM_QUERYENDSESSION: {
+        // Windows is shutting down, logging off or rebooting. Closing the job object would kill every
+        // server without saving, so ask Windows to wait and stop the servers gracefully first.
+        bool running = false;
+        for (const auto &server : servers)
+            running |= server->process.running();
+        if (!running)
+            return TRUE;
+        ShutdownBlockReasonCreate(window, tr(L"서버 월드를 저장하고 종료하는 중입니다.").c_str());
+        if (!closing) {
+            closing = true;
+            closeTime = GetTickCount64();
+        }
+        for (auto &server : servers) {
+            server->recoverAt = 0;
+            server->backupAfterStop = server->resumeAfterBackup = server->restart = false;
+            if (server->process.running() && !server->process.stopping())
+                stopServer(*server);
+        }
+        return FALSE;
+    }
+    case WM_ENDSESSION:
+        if (w) {
+            // The session ends after this returns; give the servers a bounded time to save and exit.
+            for (auto &server : servers)
+                if (server->process.running() && !server->process.stopping())
+                    stopServer(*server);
+            auto deadline = GetTickCount64() + 20000;
+            for (auto &server : servers) {
+                auto now = GetTickCount64();
+                if (server->process.running() && now < deadline)
+                    server->process.waitExit(static_cast<DWORD>(deadline - now));
+            }
+            saveSettings();
+            ShutdownBlockReasonDestroy(window);
+        } else if (closing) {
+            ShutdownBlockReasonDestroy(window);
+        }
+        return 0;
+    case WM_APP + 1:
+        message(L"설치 프로세스 종료 코드: " + std::to_wstring(static_cast<DWORD>(w)) +
+                    L"\n설치 폴더에서 실행 JAR 또는 BAT를 선택하세요.\n" + installerTarget,
+                L"서버 설치", MB_OK | MB_ICONINFORMATION);
+        return 0;
     case WM_SETTINGCHANGE:
-    case WM_THEMECHANGED:
-        if (theme == 2)
+    case WM_THEMECHANGED: {
+        // Many unrelated broadcasts arrive as WM_SETTINGCHANGE; only re-theme when the
+        // system light/dark choice actually changed.
+        if (theme != 2 || (msg == WM_SETTINGCHANGE &&
+                           (!l || _wcsicmp(reinterpret_cast<const wchar_t *>(l), L"ImmersiveColorSet") != 0)))
+            return 0;
+        DWORD systemLight = 0, size = sizeof(systemLight);
+        RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                     L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &systemLight, &size);
+        if ((systemLight != 0) != lightTheme)
             applyTheme();
         return 0;
+    }
     case WM_DROPFILES: {
         HDROP drop = reinterpret_cast<HDROP>(w);
         UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
@@ -191,26 +256,34 @@ LRESULT App::dispatch(UINT msg, WPARAM w, LPARAM l) {
         int id = GetDlgCtrlID(reinterpret_cast<HWND>(l));
         wchar_t controlClass[32]{};
         GetClassNameW(reinterpret_cast<HWND>(l), controlClass, 32);
+        HWND child = reinterpret_cast<HWND>(l);
         bool field = _wcsicmp(controlClass, L"EDIT") == 0 || msg == WM_CTLCOLOREDIT ||
-                     msg == WM_CTLCOLORLISTBOX || id == Console || id == BackupPath;
-        bool card = id == WelcomeTitle || id == WelcomeBody || id == WelcomeSteps || id == CpuTitle ||
-                    id == CpuValue || id == RamTitle || id == RamValue || id == UptimeTitle ||
-                    id == UptimeValue;
+                     _wcsicmp(controlClass, L"ComboLBox") == 0 || _wcsicmp(controlClass, L"COMBOBOX") == 0;
         COLORREF color = Foreground;
         if (id == ServerMeta || id == Footer || id == ServerHint || id == PluginNote || id == BackupNote ||
-            id == TaskNote || id == SettingsNote)
+            id == TaskNote || id == SettingsNote || id == SectionHint || id == PathNote || id == FontInfo ||
+            id == ImageNote || id == WelcomeBody || id == WelcomeSteps || id == BackupInfo || id == TaskSummary ||
+            id == GraphTitle || id == PlayerInfo)
             color = Muted;
-        if (id == Status)
-            color = current().process.running() ? Accent : Muted;
         if (id == CpuTitle)
-            color = Purple;
-        if (id == RamTitle)
             color = Blue;
+        if (id == RamTitle)
+            color = Purple;
         if (id == UptimeTitle)
             color = Green;
         SetTextColor(dc, color);
-        SetBkColor(dc, field || card ? Panel : Surface);
-        return reinterpret_cast<LRESULT>(field || card ? panelBrush : surfaceBrush);
+        if (id == Status) {
+            SetTextColor(dc, statusText);
+            SetBkColor(dc, statusFill);
+            return reinterpret_cast<LRESULT>(statusBrush);
+        }
+        if (field && id != Console) {
+            SetBkColor(dc, Field);
+            return reinterpret_cast<LRESULT>(fieldBrush);
+        }
+        COLORREF back = backdrop(child);
+        SetBkColor(dc, back);
+        return reinterpret_cast<LRESULT>(back == Panel ? panelBrush : back == Background ? bgBrush : surfaceBrush);
     }
     case WM_NOTIFY: {
         auto *notification = reinterpret_cast<NMHDR *>(l);
@@ -244,7 +317,7 @@ LRESULT App::dispatch(UINT msg, WPARAM w, LPARAM l) {
             return 0;
         if (id == ServerSelector && code == LBN_SELCHANGE) {
             auto index = SendMessageW(control(ServerSelector), LB_GETCURSEL, 0, 0);
-            if (index >= 0)
+            if (index >= 0 && static_cast<size_t>(index) != selected)
                 selectServer(static_cast<size_t>(index));
             return 0;
         }
@@ -370,7 +443,7 @@ LRESULT App::dispatch(UINT msg, WPARAM w, LPARAM l) {
             if (current().thumbnail)
                 DeleteObject(current().thumbnail);
             current().thumbnail = imageBitmap(serverDirectory(current()) / L"server-icon.png");
-            set(ProfileImage, L"자동: server-icon.png (없으면 기본 아이콘)");
+            set(ProfileImage, tr(L"자동: server-icon.png (없으면 기본 아이콘)"));
             InvalidateRect(control(ServerSelector), nullptr, FALSE);
             break;
         case ChooseServerFolder:
@@ -580,6 +653,8 @@ LRESULT App::dispatch(UINT msg, WPARAM w, LPARAM l) {
         DeleteObject(bgBrush);
         DeleteObject(surfaceBrush);
         DeleteObject(panelBrush);
+        DeleteObject(fieldBrush);
+        DeleteObject(statusBrush);
         PostQuitMessage(0);
         return 0;
     }
@@ -622,7 +697,7 @@ int runApplication(HINSTANCE instance, int show) {
     cls.hIconSm = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON,
                                                 GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
                                                 LR_SHARED));
-    cls.hbrBackground = static_cast<HBRUSH>(GetStockObject(DKGRAY_BRUSH));
+    cls.hbrBackground = nullptr; // WM_ERASEBKGND is handled; avoids a gray flash on resize.
     cls.lpszClassName = L"MinecraftServerWrapperWindow";
     if (!RegisterClassExW(&cls)) {
         if (SUCCEEDED(com))
@@ -663,6 +738,7 @@ int runApplication(HINSTANCE instance, int show) {
                 RemoveFontResourceExW(path.c_str(), FR_PRIVATE, nullptr);
         }
     } privateFonts;
+    SetProcessShutdownParameters(0x3FF, 0); // be notified early so servers can be stopped gracefully
     App app;
     HWND window = CreateWindowExW(0, cls.lpszClassName, L"Minecraft Server Manager",
                                   WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 1440,

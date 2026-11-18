@@ -60,14 +60,15 @@ HBITMAP App::imageBitmap(const fs::path &path) {
         return nullptr;
     Gdiplus::Bitmap scaled(28, 28, PixelFormat32bppARGB);
     Gdiplus::Graphics graphics(&scaled);
-    graphics.Clear(Gdiplus::Color(255, 45, 45, 45));
+    // Flatten onto the card color of the current theme (thumbnails are reloaded on theme changes).
+    graphics.Clear(Gdiplus::Color(255, GetRValue(Panel), GetGValue(Panel), GetBValue(Panel)));
     graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
     double ratio = std::min(28.0 / original.GetWidth(), 28.0 / original.GetHeight());
     int width = std::max(1, static_cast<int>(original.GetWidth() * ratio)),
         height = std::max(1, static_cast<int>(original.GetHeight() * ratio));
     graphics.DrawImage(&original, (28 - width) / 2, (28 - height) / 2, width, height);
     HBITMAP result = nullptr;
-    scaled.GetHBITMAP(Gdiplus::Color(255, 45, 45, 45), &result);
+    scaled.GetHBITMAP(Gdiplus::Color(255, GetRValue(Panel), GetGValue(Panel), GetBValue(Panel)), &result);
     return result;
 }
 

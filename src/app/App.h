@@ -51,10 +51,21 @@
 
 namespace fs = std::filesystem;
 namespace wrapper {
-inline COLORREF Background = RGB(30, 30, 30), Surface = RGB(45, 45, 45), Panel = RGB(37, 37, 37);
-inline COLORREF Border = RGB(65, 65, 65), Foreground = RGB(225, 225, 225), Muted = RGB(160, 163, 166);
-inline COLORREF Accent = RGB(155, 205, 0), Blue = RGB(48, 156, 239), Purple = RGB(105, 105, 248),
-                Green = RGB(0, 199, 131);
+// Fluent-style palette; App::applyTheme() rewrites these for dark/light.
+// Background: sidebar and title bar. Surface: content layer. Panel: cards. Field: inputs.
+inline COLORREF Background = RGB(32, 32, 32), Surface = RGB(39, 39, 39), Panel = RGB(45, 45, 45);
+inline COLORREF Border = RGB(62, 62, 62), CardStroke = RGB(53, 53, 53), Foreground = RGB(240, 240, 240),
+                Muted = RGB(168, 168, 168);
+inline COLORREF Field = RGB(52, 52, 52), Control = RGB(55, 55, 55), ControlHover = RGB(63, 63, 63),
+                Subtle = RGB(58, 58, 58);
+inline COLORREF Accent = RGB(96, 205, 255), OnAccent = RGB(0, 0, 0), Danger = RGB(255, 153, 164),
+                Success = RGB(108, 203, 95), Caution = RGB(252, 185, 0);
+inline COLORREF Blue = RGB(96, 205, 255), Purple = RGB(180, 160, 255), Green = RGB(108, 203, 95);
+constexpr int SidebarWidth = 240;
+inline COLORREF blend(COLORREF a, COLORREF b, double t) {
+    auto mix = [t](int x, int y) { return static_cast<int>(x + (y - x) * t + 0.5); };
+    return RGB(mix(GetRValue(a), GetRValue(b)), mix(GetGValue(a), GetGValue(b)), mix(GetBValue(a), GetBValue(b)));
+}
 enum Id {
     WelcomeTitle = 900,
     WelcomeBody,
@@ -307,7 +318,15 @@ class App {
     std::vector<std::vector<std::wstring>> taskRows;
     bool consoleDirty = false;
     HFONT font = nullptr, mono = nullptr, large = nullptr, heading = nullptr, small = nullptr;
-    HBRUSH bgBrush = nullptr, surfaceBrush = nullptr, panelBrush = nullptr;
+    HBRUSH bgBrush = nullptr, surfaceBrush = nullptr, panelBrush = nullptr, fieldBrush = nullptr,
+           statusBrush = nullptr;
+    // Card rectangles (client coordinates) for the current page, rebuilt by layout() and painted by
+    // paintWindow(); controls inside a card use the Panel color as their backdrop.
+    std::vector<RECT> cards;
+    RECT statusPill{};
+    COLORREF statusFill = 0, statusText = 0;
+    COLORREF backdrop(HWND child) const;
+    void statusColors();
     PlayerFaces faces;
     std::vector<std::unique_ptr<Server>> servers;
     size_t selected = 0, backupOwner = 0;
@@ -374,7 +393,7 @@ class App {
     bool overlapsRunningDirectory(const Server &server) const;
     bool overlapsBackup(const Server &server) const;
 
-    bool ensureEula(Server &server);
+    bool ensureEula(Server &server, bool interactive = true);
     bool startServer(Server &server, bool interactive = true);
     void stopServer(Server &server, bool restart = false);
     void cancelAutomaticWork(Server &server);
@@ -460,6 +479,8 @@ class App {
 
   private:
     bool backupPending = false;
+    bool settingsDirty = false;
+    int themeApplied = -1; // light/dark the profile thumbnails were rendered for // scheduler results waiting to be written at the end of timer()
     bool batchingConsole = false;
 };
 

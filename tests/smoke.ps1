@@ -233,7 +233,7 @@ try {
  if ((Read-Control 425) -ne $beforeEscape) { throw 'Escape changed the server process' }
 
  [UI]::ColorSearch='RESET-COLOR'
- if ([UI]::ColorAt([UI]::GetDlgItem($h,114),$p.Id,0) -ne (235+235*256+231*65536)) { throw 'Dark console default is not white' }
+ if ([UI]::ColorAt([UI]::GetDlgItem($h,114),$p.Id,0) -ne (240+240*256+240*65536)) { throw 'Dark console default is not white' }
  [UI]::ColorSearch='RGB-COLOR'
  Write-Output 'PASS: dark console default is white after ANSI reset' 
  Measure-WrapperCpu 'running_mock_system_cpu_percent'
@@ -410,7 +410,7 @@ try {
  Send-Command 'colors'
  Wait-Until { (Read-Control 114).Contains('RGB-COLOR') -and [UI]::SendMessage([UI]::GetDlgItem($h,331),0xF0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -eq 1 } 'sending command resumes auto scroll for its result'
  [UI]::ColorSearch='RESET-COLOR'
- if ([UI]::ColorAt([UI]::GetDlgItem($h,114),$p.Id,0) -ne (35+35*256+33*65536)) { throw 'Light console default is not dark' }
+ if ([UI]::ColorAt([UI]::GetDlgItem($h,114),$p.Id,0) -ne (27+27*256+27*65536)) { throw 'Light console default is not dark' }
  [UI]::ColorSearch='RGB-COLOR'
  Capture 'console-light-rgb'
  Send-Command 'tabs'

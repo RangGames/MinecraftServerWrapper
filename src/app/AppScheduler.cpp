@@ -27,7 +27,7 @@ void App::refreshTasks() {
             tr(taskName(task.type)),
             task.minuteOfDay < 0
                 ? std::to_wstring(task.seconds) + tr(L"초")
-                : L"매일 " + std::to_wstring(task.minuteOfDay / 60) + L":" +
+                : tr(L"매일") + L" " + std::to_wstring(task.minuteOfDay / 60) + L":" +
                       (task.minuteOfDay % 60 < 10 ? L"0" : L"") + std::to_wstring(task.minuteOfDay % 60),
             task.enabled ? std::to_wstring(remaining) + tr(L"초 후") : tr(L"일시 중지"),
             task.command,
@@ -46,10 +46,13 @@ void App::refreshTasks() {
         }
         taskRows[i] = std::move(values);
     }
-    if (rebuild && previous >= 0 && static_cast<size_t>(previous) < tasks.size())
+    bool reselected = rebuild && previous >= 0 && static_cast<size_t>(previous) < tasks.size();
+    if (reselected)
         ListView_SetItemState(control(TaskList), previous, LVIS_SELECTED | LVIS_FOCUSED,
                               LVIS_SELECTED | LVIS_FOCUSED);
     loading = false;
+    if (reselected)
+        loadTaskEditor();
     taskEditorState();
 }
 
@@ -105,7 +108,7 @@ void App::runTask(size_t owner, Task &task) {
         task.lastResult = L"건너뜀: 백업 진행 중";
         task.due = GetTickCount64() + task.seconds * 1000ULL;
         task.nextWall = nextDaily(task.minuteOfDay);
-        saveSettings();
+        settingsDirty = true;
         return;
     }
     if (task.type == 0) {
@@ -136,7 +139,7 @@ void App::runTask(size_t owner, Task &task) {
     }
     task.due = GetTickCount64() + task.seconds * 1000ULL;
     task.nextWall = nextDaily(task.minuteOfDay);
-    saveSettings();
+    settingsDirty = true;
 }
 
 void App::taskAction(int id) {

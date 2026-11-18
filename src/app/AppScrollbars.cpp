@@ -34,7 +34,7 @@ void paintScrollbars(HWND hwnd, HDC supplied = nullptr) {
         }
         COLORREF color = (info.rgstate[3] & STATE_SYSTEM_PRESSED)
                              ? Accent
-                             : (GetRValue(Panel) > 128 ? RGB(160, 170, 180) : RGB(95, 105, 115));
+                             : blend(Panel, Muted, 0.55);
         HBRUSH brush = CreateSolidBrush(color);
         auto oldBrush = SelectObject(dc, brush);
         auto oldPen = SelectObject(dc, GetStockObject(NULL_PEN));

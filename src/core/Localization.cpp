@@ -272,6 +272,7 @@ std::wstring localize(const std::wstring &value, bool english) {
         {L"가동 시간", L"UPTIME"},
         {L"서버 통계 · 최근 120초", L"Server statistics · last 120 seconds"},
         {L"마인크래프트 서버 관리자", L"Minecraft Server Manager"},
+        {L"서버 관리", L"Servers"},
         {L"명 접속 중", L"Players Online"},
         {L"개 서버", L" servers"},
         {L"설정에서 실행 경로를 지정하고 설정 저장을 누른 뒤 시작하세요. 서버 추가 시 EULA를 한 번 "

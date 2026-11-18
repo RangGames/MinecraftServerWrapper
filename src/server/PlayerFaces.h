@@ -31,7 +31,13 @@ public:
     void poll();
     bool draw(const DRAWITEMSTRUCT& item) const;
     void clear();
-    void setTheme(bool light) { light_=light; }
+    void setColors(COLORREF background, COLORREF selected, COLORREF text, COLORREF muted, COLORREF accent) {
+        background_ = background;
+        selected_ = selected;
+        text_ = text;
+        muted_ = muted;
+        accent_ = accent;
+    }
     void shutdown();
 
 private:
@@ -47,7 +53,8 @@ private:
     struct Request { std::wstring name; std::uint64_t ticket; };
     struct Result { std::uint64_t ticket; std::vector<BYTE> png; };
 
-    bool light_=false;
+    COLORREF background_ = RGB(45, 45, 45), selected_ = RGB(58, 58, 58), text_ = RGB(240, 240, 240),
+             muted_ = RGB(168, 168, 168), accent_ = RGB(96, 205, 255);
     HWND list_ = nullptr;
     ULONG_PTR gdiplusToken_ = 0;
     std::vector<Player> players_;

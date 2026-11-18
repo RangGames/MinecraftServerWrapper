@@ -1,7 +1,9 @@
 #pragma once
 #include <atomic>
+#include <cstdint>
 #include <deque>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -32,6 +34,8 @@ class RemotePanel {
     bool running() const { return active_; }
 
   private:
+    // Handles one accepted client (a SOCKET) on its own connection thread; the caller closes it.
+    void serve(std::uintptr_t client, unsigned port);
     unsigned port_ = 0;
     std::atomic<bool> active_{false};
     std::atomic<void *> notifyWindow_{nullptr};

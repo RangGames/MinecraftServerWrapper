@@ -41,7 +41,7 @@ std::wstring resultOf(BackupJob &job) {
         "background job completes", 60000);
     return result;
 }
-std::string http(unsigned port, const std::string &request) {
+SOCKET connectTo(unsigned port) {
     SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     DWORD timeout = 5000;
     setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&timeout), sizeof(timeout));
@@ -51,13 +51,9 @@ std::string http(unsigned port, const std::string &request) {
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     if (connect(s, reinterpret_cast<sockaddr *>(&a), sizeof(a)))
         throw std::runtime_error("HTTP connect");
-    size_t sent = 0;
-    while (sent < request.size()) {
-        int n = send(s, request.data() + sent, static_cast<int>(request.size() - sent), 0);
-        if (n <= 0)
-            throw std::runtime_error("HTTP send");
-        sent += n;
-    }
+    return s;
+}
+std::string readAll(SOCKET s) {
     std::string result;
     char bytes[4096];
     int n;
@@ -65,6 +61,17 @@ std::string http(unsigned port, const std::string &request) {
         result.append(bytes, n);
     closesocket(s);
     return result;
+}
+std::string http(unsigned port, const std::string &request) {
+    SOCKET s = connectTo(port);
+    size_t sent = 0;
+    while (sent < request.size()) {
+        int n = send(s, request.data() + sent, static_cast<int>(request.size() - sent), 0);
+        if (n <= 0)
+            throw std::runtime_error("HTTP send");
+        sent += n;
+    }
+    return readAll(s);
 }
 int main(int argc, char **argv) {
     auto root = fs::temp_directory_path() / (L"wrapper-operations-한글 ' " + newToken().substr(0, 12));
@@ -276,7 +283,55 @@ int main(int argc, char **argv) {
             },
             "API dispatched to UI queue");
         require(pending.get().find("{\"servers\":[]}") != std::string::npos, "API response returned");
+        // A client that connects but never sends (e.g. a browser preconnect) must not stall other clients.
+        auto authorized = "GET /api/servers" + base + "Authorization: Bearer " + users[0].token + "\r\n\r\n";
+        SOCKET idle = connectTo(port);
+        Sleep(200);
+        auto started = GetTickCount64();
+        pending = std::async(std::launch::async, [&] { return http(port, authorized); });
+        waitFor(
+            [&] {
+                auto requests = panel.pending();
+                if (requests.empty())
+                    return false;
+                requests.front()->result.set_value("{\"servers\":[]}");
+                return true;
+            },
+            "request queued while idle connection open");
+        require(pending.get().find("{\"servers\":[]}") != std::string::npos &&
+                    GetTickCount64() - started < 1000,
+                "idle connection does not block other clients");
+        closesocket(idle);
+        std::vector<SOCKET> idlers;
+        for (int i = 0; i < 8; ++i)
+            idlers.push_back(connectTo(port));
+        Sleep(200);
+        started = GetTickCount64();
+        require(readAll(connectTo(port)).find("503 Response") != std::string::npos &&
+                    GetTickCount64() - started < 1000,
+                "excess connections refused quickly");
+        for (auto s : idlers)
+            closesocket(s);
+        waitFor([&] { return http(port, "GET /" + base + "\r\n").find("200 Response") != std::string::npos; },
+                "connection slots released");
+        // stop() must return promptly while one client is idle and another is waiting on the UI thread.
+        idle = connectTo(port);
+        pending = std::async(std::launch::async, [&] { return http(port, authorized); });
+        std::shared_ptr<RemoteRequest> waiting;
+        waitFor(
+            [&] {
+                auto requests = panel.pending();
+                if (!requests.empty())
+                    waiting = requests.front();
+                return waiting != nullptr;
+            },
+            "in-flight request waits on UI");
+        started = GetTickCount64();
         panel.stop();
+        require(GetTickCount64() - started < 1000, "stop is prompt with idle and in-flight clients");
+        require(pending.get().find("503 Response") != std::string::npos && waiting->cancelled,
+                "in-flight request cancelled on stop");
+        closesocket(idle);
         require(!panel.running(), "remote panel stops cleanly");
         require(removePathTree(root), "long-path test artifacts removed");
         return 0;

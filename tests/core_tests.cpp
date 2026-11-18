@@ -1,7 +1,9 @@
 #include <windows.h>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include "ConsoleColors.h"
 #include "SettingsSnapshot.h"
@@ -117,6 +119,83 @@ int main() {
         wchar_t font[80]{};
         GetPrivateProfileStringW(L"Workspace", L"Font", L"", font, 80, ini.c_str());
         require(std::wstring(font) == L"나눔고딕", "old settings survive failed replacement");
+        auto readIni = [](const fs::path &file, const wchar_t *section, const wchar_t *key) {
+            wchar_t buffer[512]{};
+            GetPrivateProfileStringW(section, key, L"<missing>", buffer, 512, file.c_str());
+            return std::wstring(buffer);
+        };
+        auto edges = root / L"edges.ini";
+        {
+            SettingsSnapshot s(edges);
+            s.write(L"Edge", L"LeadingDouble", L"\"quoted start");
+            s.write(L"Edge", L"TrailingDouble", L"quoted end\"");
+            s.write(L"Edge", L"BothDouble", L"\"fully quoted\"");
+            s.write(L"Edge", L"LeadingSingle", L"'single start");
+            s.write(L"Edge", L"TrailingSingle", L"single end'");
+            s.write(L"Edge", L"Spaces", L"  padded value  ");
+            s.write(L"Edge", L"Empty", L"");
+            s.write(L"Edge", L"Newline", L"first\r\nsecond\nthird");
+            s.write(L"Edge", L"Korean", L"서버 데스크 설정");
+            s.write(L"Edge", L"Repeated", L"old");
+            s.write(L"edge", L"REPEATED", L"new");
+            require(s.commit(), "edge-case settings commit");
+        }
+        require(readIni(edges, L"Edge", L"LeadingDouble") == L"\"quoted start" &&
+                    readIni(edges, L"Edge", L"TrailingDouble") == L"quoted end\"" &&
+                    readIni(edges, L"Edge", L"BothDouble") == L"\"fully quoted\"",
+                "settings double quotes round-trip");
+        require(readIni(edges, L"Edge", L"LeadingSingle") == L"'single start" &&
+                    readIni(edges, L"Edge", L"TrailingSingle") == L"single end'",
+                "settings single quotes round-trip");
+        require(readIni(edges, L"Edge", L"Spaces") == L"  padded value  ",
+                "settings surrounding spaces kept");
+        require(readIni(edges, L"Edge", L"Empty").empty(), "settings empty value round-trip");
+        require(readIni(edges, L"Edge", L"Newline") == L"first  second third",
+                "settings newlines become spaces");
+        require(readIni(edges, L"Edge", L"Korean") == L"서버 데스크 설정",
+                "settings Korean text round-trip");
+        require(readIni(edges, L"Edge", L"Repeated") == L"new" &&
+                    readIni(edges, L"EDGE", L"repeated") == L"new",
+                "settings last write wins with case-insensitive section and key");
+        auto readAll = [](const fs::path &file) {
+            std::ifstream in(file, std::ios::binary);
+            return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        };
+        {
+            auto bytes = readAll(edges);
+            require(bytes.size() >= 2 && static_cast<unsigned char>(bytes[0]) == 0xFF &&
+                        static_cast<unsigned char>(bytes[1]) == 0xFE && bytes.size() % 2 == 0,
+                    "settings file is UTF-16LE with BOM");
+            std::wstring text(bytes.size() / 2, L'\0');
+            memcpy(text.data(), bytes.data(), bytes.size());
+            size_t repeated = 0;
+            for (size_t at = text.find(L"Repeated="); at != std::wstring::npos;
+                 at = text.find(L"Repeated=", at + 1))
+                ++repeated;
+            require(repeated == 1 && text.find(L"REPEATED=") == std::wstring::npos &&
+                        text.find(L"[edge]") == std::wstring::npos,
+                "settings duplicate write stored once under first spelling");
+        }
+        require(resolvedPathsOverlap(L"C:\\S\\a\\", L"C:\\S\\a\\b") &&
+                    resolvedPathsOverlap(L"C:\\S\\a\\b", L"C:\\S\\a\\"),
+                "trailing separator parent overlaps child");
+        require(!resolvedPathsOverlap(L"C:\\S\\a", L"C:\\S\\ab") &&
+                    !resolvedPathsOverlap(L"C:\\S\\ab", L"C:\\S\\a"),
+                "sibling name prefix does not overlap");
+        require(resolvedPathsOverlap(L"c:\\s\\A", L"C:\\S\\a\\World") &&
+                    pathsOverlap(root / L"Case", root / L"case" / L"world"),
+                "path overlap is case-insensitive");
+        auto escaped = root / L"escaped.properties";
+        const std::string escapedOriginal = "motd=original\r\n";
+        std::ofstream(escaped, std::ios::binary) << escapedOriginal;
+        ServerProperties escapedProps;
+        require(escapedProps.load(escaped) && !escapedProps.save(escaped, {{"motd", "path\\"}}) &&
+                    !escapedProps.save(escaped, {{"motd", "path\\\\\\"}}) &&
+                    readAll(escaped) == escapedOriginal,
+                "odd trailing backslashes rejected and file unchanged");
+        require(escapedProps.save(escaped, {{"motd", "path\\\\"}}) && escapedProps.load(escaped) &&
+                    escapedProps.get("motd", "") == "path\\\\",
+                "even trailing backslashes accepted");
         auto properties = root / L"server.properties";
         std::ofstream(properties) << "# keep comment\nserver-port=25565\ncustom-plugin-value=unchanged\n";
         ServerProperties props;

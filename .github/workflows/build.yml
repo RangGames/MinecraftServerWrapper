@@ -1,0 +1,43 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      # MinGW-w64 GCC (C++20, <stop_token>/jthread), CMake and Ninja, matching the local CLion toolchain.
+      - uses: msys2/setup-msys2@v2.27.0
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+
+      - name: Configure
+        shell: msys2 {0}
+        run: cmake -S . -B cmake-build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build cmake-build-release -j 4
+
+      - name: Test
+        shell: msys2 {0}
+        run: ctest --test-dir cmake-build-release --output-on-failure
+
+      - name: Package
+        shell: pwsh
+        run: ./scripts/package.ps1 -BuildDirectory cmake-build-release -SkipBuild
+
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: ServerDesk-win64
+          path: dist/ServerDesk-*-win64.zip
+          if-no-files-found: error

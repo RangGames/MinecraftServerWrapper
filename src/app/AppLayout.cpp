@@ -50,7 +50,23 @@ void App::layout() {
     // Top row: server tiles and the application menus.
     for (int i = 0; i < 4; ++i)
         place(MenuFile + i, right - 4 * 76 + i * 76, 28, 72, 30);
-    place(ServerSelector, left, 16, width - 4 * 76 - 16, 52);
+    // Server tiles shrink (down to 196px) so every profile fits in one row. Only when they still don't fit
+    // does the list scroll horizontally, and then it grows by the scrollbar height so tiles are not cut off.
+    {
+        int available = width - 4 * 76 - 16, count = static_cast<int>(servers.size());
+        int tile = std::clamp(available / std::max(1, count), 196, 292);
+        bool overflow = tile * count > available;
+        int scrollbar = overflow ? MulDiv(GetSystemMetrics(SM_CYHSCROLL), 96, UiDpi) : 0;
+        place(ServerSelector, left, overflow ? 8 : 16, available, 52 + scrollbar);
+        HWND list = control(ServerSelector);
+        if (selectorColumn != S(tile)) {
+            selectorColumn = S(tile);
+            SendMessageW(list, LB_SETCOLUMNWIDTH, selectorColumn, 0);
+            InvalidateRect(list, nullptr, FALSE);
+        }
+        if (!overflow && SendMessageW(list, LB_GETTOPINDEX, 0, 0) != 0)
+            SendMessageW(list, LB_SETTOPINDEX, 0, 0);
+    }
 
     // Server header card: name, state pill, metadata and lifecycle actions.
     card(left, 80, width, 96);

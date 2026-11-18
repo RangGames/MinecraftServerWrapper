@@ -485,6 +485,7 @@ class App {
     bool settingsDirty = false;
     bool saveFailureReported = false;
     int layoutDepth = 0;
+    int selectorColumn = 0; // current server tile width (device pixels)
     SIZE layoutSize{};
     HBITMAP shellBuffer = nullptr; // cached back buffer for paintWindow()
     SIZE shellSize{}; // client size of the last layout pass

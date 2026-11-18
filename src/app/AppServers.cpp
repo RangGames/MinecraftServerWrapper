@@ -441,6 +441,15 @@ void App::playerAction(const std::wstring &action) {
 
 LRESULT CALLBACK App::serverListProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR data) {
     auto *app = reinterpret_cast<App *>(data);
+    if (msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL) {
+        // One tile per column: the wheel moves the row of server tiles left or right.
+        int delta = GET_WHEEL_DELTA_WPARAM(w);
+        int step = (msg == WM_MOUSEWHEEL ? -delta : delta) > 0 ? 1 : -1;
+        auto count = static_cast<int>(SendMessageW(hwnd, LB_GETCOUNT, 0, 0));
+        auto top = static_cast<int>(SendMessageW(hwnd, LB_GETTOPINDEX, 0, 0));
+        SendMessageW(hwnd, LB_SETTOPINDEX, std::clamp(top + step, 0, std::max(0, count - 1)), 0);
+        return 0;
+    }
     if (msg == WM_MOUSEMOVE || msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP) {
         POINT point{static_cast<short>(LOWORD(l)), static_cast<short>(HIWORD(l))};
         auto hit = SendMessageW(hwnd, LB_ITEMFROMPOINT, 0, l);
